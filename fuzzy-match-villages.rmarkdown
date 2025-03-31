@@ -1,0 +1,139 @@
+---
+title: "Fuzzy Match Villages"
+format: html
+---
+
+
+
+Read in the data and the fuzzy matching library.
+
+
+
+```{r}
+library(readr)
+
+# Read in the data
+satp_df <- read_csv("data/satp_clean.csv")
+shrug_df <- read_csv("data/shrid_loc_names.csv") 
+```
+
+
+
+Clean the data for use with `fuzzyjoin`.
+
+
+
+```{r}
+library(stringr)
+library(dplyr)
+library(tidyr)
+
+# convert village names to lower case in satp_df
+satp_village_df <- satp_df |>
+  mutate(across(state:other_areas, str_to_lower)) |>
+  rename_with(~ paste0(., "_name"), state:block) |>
+  drop_na(village_name) 
+
+# drop rows without village names in shrug_df
+
+shrug_village_df <- shrug_df |>
+  mutate(village_name = coalesce(village_name, town_name)) 
+```
+
+
+
+Try to fuzzy match the village names in satp_df with the village names in villages_df.
+
+
+
+```{r}
+# join_test <- satp_df |>
+#   stringdist_left_join(villages_df, by = "village_name", max_dist = 2) |>
+#   select(village_name.x, village_name.y, distance) #|>
+#   #filter(distance < 2)
+```
+
+
+
+Does not work. Crashes because data frames are too big. 
+
+Try looping through states and doing one state at a time.
+
+
+
+```{r}
+library(purrr)
+library(fuzzyjoin)
+library(dplyr)
+
+# Create a list of unique states from satp_village_df
+states <- unique(satp_village_df$state_name)
+
+# Define a function to apply fuzzy join for each district within a state
+fuzzy_join_by_district <- function(state) {
+
+  # Filter the data frames to only include the current state
+  satp_state_subset <- satp_village_df |> filter(state_name == state)
+  shrug_state_subset <- shrug_village_df |> filter(state_name == state)
+  
+  # Get unique districts for the current state
+  districts <- unique(satp_state_subset$district_name)
+
+  # Loop through each district and perform fuzzy join
+  map_dfr(districts, function(district) {
+    
+    # Filter the data frames to only include the current district
+    satp_district_subset <- satp_state_subset |> filter(district_name == district)
+    shrug_district_subset <- shrug_state_subset |> filter(district_name == district)
+
+    # Perform fuzzy join on the district subset
+    stringdist_left_join(satp_district_subset,
+                         shrug_district_subset,
+                         by = "village_name", 
+                         max_dist = .4, 
+                         method = "jw")
+  })
+}
+
+# Apply the fuzzy join function across all states
+final_df <- map_dfr(states, fuzzy_join_by_district)
+```
+
+
+
+Clean up the data frame and inspect.
+
+
+
+```{r}
+  final_df <- final_df |>
+  relocate(state_name.y, .after = state_name.x) |>
+  relocate(district_name.y, .after = district_name.x) |>
+  relocate(subdistrict_name, .after = block_name) |>
+  relocate(place_name, .after = other_areas) |>
+  relocate(village_name.y, .after = village_name.x) 
+```
+
+
+
+Evaluate.
+
+
+
+```{r}
+# Calculate percent not matched
+
+final_df |>
+  summarise(
+    total_rows = n(),
+    matched_rows = sum(!is.na(village_name.y)),
+    percent_matched = matched_rows / total_rows * 100
+  )
+```
+
+
+54% matched with Levenshine with a max distance of 1.
+82.5% matched with Levenshine with no max distance, but lots of errors...even when there is an exact match
+
+99.97% match with Jaro-Winkler with no max distance. 
+
