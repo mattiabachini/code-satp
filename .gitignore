@@ -3,6 +3,6 @@
 .RData
 .Ruserdata
 results.DS_Store
-satp/
 .DS_Store
 ~.xlsx
+venv/
