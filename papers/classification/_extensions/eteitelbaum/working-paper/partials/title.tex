@@ -1,0 +1,39 @@
+%% Title %%
+$if(title)$
+\title{$title$$if(thanks)$\thanks{$thanks$}$endif$}
+$endif$
+
+%% Subtitle %%
+$if(subtitle)$
+\usepackage{etoolbox}
+\makeatletter
+\providecommand{\subtitle}[1]{% add subtitle to \maketitle
+  \apptocmd{\@title}{\par {\vskip 0.25em \large #1 \par}}{}{}
+}
+\makeatother
+\subtitle{$subtitle$}
+$endif$
+
+%% Author(s) %%
+$if(author)$
+\author{
+$for(author)$
+  $author.name.literal$$if(author.orcid)$~\orcidlink{$author.orcid$}$endif$\\
+  $for(author.affiliations)$
+    $author.name$\\
+    $author.department$\\
+    $author.address$\\
+    $author.city$, $author.region$ $author['postal-code']$\\
+    $author.country$
+  $endfor$
+  $if(author.email)$\\\href{mailto:$author.email$}{$author.email$}$endif$
+  $sep$ \and
+$endfor$
+}
+$endif$
+
+% Omit the date since the \published command does that
+\date{}
+
+\usepackage{url}
+\urlstyle{same}

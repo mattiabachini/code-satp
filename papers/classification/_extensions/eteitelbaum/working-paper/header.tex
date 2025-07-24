@@ -1,0 +1,61 @@
+%%% Setup for frontmatter and spacing %%%
+
+\usepackage{orcidlink} % for Orchid ID
+\usepackage{indentfirst} % indent first para
+\setlength{\parindent}{0.5in} % set indent length
+\setlength{\parskip}{0em} % no extra space between paras
+\usepackage{titlesec} % to set spacing of section titles
+\titlespacing\section{0pt}{12pt plus 2pt minus 2pt}{0pt plus 2pt minus 2pt}
+\titlespacing\subsection{0pt}{12pt plus 2pt minus 2pt}{0pt plus 2pt minus 2pt}
+\titlespacing\subsubsection{0pt}{0pt plus 2pt minus 2pt}{0pt plus 2pt minus 2pt}
+          
+%%% Captions %%%
+          
+\usepackage{caption}
+\captionsetup{
+  %captionskip = 0pt,   % eliminate space bw capiton and figure
+  %labelformat = empty, % eliminate caption label
+  %font = bf,
+  justification = raggedright, % left justify the caption 
+  singlelinecheck = true,      % but only if it is more than one line
+  font = footnotesize,         % make font smaller
+  labelfont = bf               % make the caption label bold
+}
+\setlength{\abovecaptionskip}{10pt} % Adjust the space above the caption
+
+
+%%% Packages for rotating figures and landscape view %%%
+\usepackage{rotating}        
+\usepackage{pdflscape}
+
+%%% Abstract %%%
+
+\usepackage{abstract}
+\renewcommand{\abstractname}{ABSTRACT\vspace{.5em}}
+\renewcommand{\abstractnamefont}{\normalfont\bfseries}
+\renewcommand{\abstracttextfont}{\normalsize}
+\setlength{\absleftindent}{\parindent}
+\setlength{\absrightindent}{\parindent}
+
+%% Title %%%
+
+\usepackage{titling}
+\setlength{\droptitle}{3em}
+\pretitle{\par\vskip 5em\begin{center}\LARGE\bfseries}
+\posttitle{\par\end{center}\vspace{2\baselineskip}}
+
+%%% New commands %%%
+
+% Keywords
+\providecommand{\keywords}[1]{\textbf{\textit{Keywords---}}#1}
+
+% Keywords
+\providecommand{\fundting}[1]{\textbf{\textit{Funding: }}#1}
+
+% Command for a note at the top of the first page describing the publication
+% status of the paper.
+\newcommand{\published}[1]{%
+   \gdef\puB{#1}}
+   \newcommand{\puB}{}
+   \renewcommand{\maketitlehooka}{%
+       \par\noindent\footnotesize\sffamily\puB}

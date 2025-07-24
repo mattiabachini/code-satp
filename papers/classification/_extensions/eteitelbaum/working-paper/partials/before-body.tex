@@ -1,0 +1,73 @@
+%%% Title Section %%%
+
+
+% \begin{titlepage}
+% \center
+% 
+% % Don't include a newpage before \maketitle
+% {\let\newpage\relax\maketitle}
+% 
+% % Needs to come after \maketitle
+% \thispagestyle{title}
+% 
+
+
+$if(published)$
+$if(code-repo)$
+\published{\textbf{$date$} \qquad $published$ \\ {\scriptsize $code-repo$}}
+$else$
+\published{\textbf{$date$} \qquad {\scriptsize $published$}}
+$endif$
+$else$
+$if(code-repo)$
+\published{\textbf{$date$} \\ {\scriptsize $code-repo$}}
+$else$
+\published{\textbf{$date$}}
+$endif$
+$endif$
+
+\vspace{0.25in}
+
+$if(title)$
+\maketitle
+$endif$
+
+\vspace{0.25in}
+
+% abstract
+
+$if(abstract)$
+\begin{abstract}
+\noindent            %eliminate indent in abstract
+$abstract$
+\end{abstract}
+
+\vspace{\baselineskip}
+
+$if(keywords)$\indent \keywords{%
+$for(keywords)$$keywords$$sep$, $endfor$%
+}$endif$
+
+$endif$
+
+\vspace{0.25in}
+
+% word count
+
+$if(word-count)$
+{
+\begin{center} 
+Word Count: $word-count$
+\end{center}
+}
+$endif$
+
+\vspace{0.25in}
+
+% funding
+
+$if(funding)$
+\noindent 
+\textbf{Funding: }$funding$
+$endif$
+

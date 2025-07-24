@@ -1,0 +1,63 @@
+---
+title: Working Paper Template
+subtitle: A Nice Template for Social Science Working Papers
+short-title: A Nice Template
+published: Draft Prepared for Presentation at the APSA Virtual Research Meeting on Advancing the Use of Computational Tools in Political Science
+code-repo: Access the code, data, and analysis at <https://github.com/eteitelbaum/code-satp>
+format:
+  working-paper-pdf:
+    keep-tex: true
+author:
+  - name: Emmanuel Teitelbaum
+    orcid: 0000-0001-7089-0588
+    #title: Associate Professor
+    #url: https://example.org/
+    affiliations:
+      - name: George Washington University
+        department: Deptartment of Political Science
+        email: ejt@gwu.edu
+    attributes: 
+      corresponding: true
+  - name: Mohiddin Bacha Shaik
+    affiliations:
+      - name: George Washington University
+        department: Data Science Program
+  - name: Shiva Chakrabarty Sharma
+    affiliations:
+      - name: George Washington University
+        department: Trachtenberg School of Public Policy
+date: today
+date-format: long
+abstract: |
+  Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. More Latin.
+word-count: 8,453 
+number-sections: true
+#linespace: doublespace
+thanks: |
+  We would like to thank all of our furry friends for their helpful feedback on this manuscript.
+#funding: |
+#  Funding for this project was generously provided by the US Forest Service.
+#keywords: [template, demo]
+reference-section-title: References
+#bibliography: references.bib 
+---
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+1 + 1
+```
+
+You can add options to executable code like this 
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
