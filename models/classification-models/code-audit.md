@@ -7,6 +7,7 @@
 5. Added a docstring to the MultiLabelDataset class. 
 6. Eliminated reference to `run_validation_experiments()` in the docstring for `run_final_test_evaluation()`. 
 7. Renamed `run_final_test_evaluation()` to `run_model_experiments()`. 
+8. Removed the utility code chunk that downloaded the current notebook and removed broken widget metadata that was causing issues on Colab. 
 
 ## actiontype.ipynb
 
@@ -18,11 +19,14 @@
 6. Eliminated reference to `run_validation_experiments()` in the docstring for `run_final_test_evaluation()`. 
 7. Renamed `run_final_test_evaluation()` to `run_model_experiments()`. 
    
-## Other issues
+## Other issues and improvements
 
 1. What are `civ_targettype.ipynb` and `actiontype_old.ipynb`? Do we still need them? 
 2. Consider adding a README with a diagram explaining the flow of the code. (See below for potential mermaid diagram).
 3. Do we really need to notebooks for the targettype and actiontype models? Can we just use the `run_model_experiments()` function? Should we combine as a single notebook? Or should we have one script that runs the models and import it into the notebooks that then analyze the two models separately? 
+4. Refactored code so that we have a single `model_utils.py` file that contains the data class and model training functions that then gets imported into the notebooks.
+5. Added `model_labels` as an argument to the `run_model_experiments()` function. 
+6. Added a `visualization_utils.py` file that contains the functions for visualizing the data. 
 
 
 ## Potential diagram for the targettype model (or other multi-label classification models))

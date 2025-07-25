@@ -277,7 +277,7 @@ def run_model_experiments(
     output_csv="test_summary.csv",
     predictions_csv="test_predictions.csv",
     model_names,  
-    model_name_labels=None,
+    model_labels=None,
     max_len=512,
     batch_size=16,
     epochs=2,
@@ -300,13 +300,13 @@ def run_model_experiments(
         epochs (int): Number of training epochs.
         fractions (list of float): Fractions of training pool to use in experiments.
         model_names (list of str): HuggingFace model identifiers to evaluate.
-        model_name_labels (dict, optional): Mapping from model name to human-readable label. If None, model names are used as labels.
+        model_labels (dict, optional): Mapping from model name to human-readable label. If None, model names are used as labels.
     Returns:
         results_df (pd.DataFrame): Test metrics for all model/fraction combinations.
         full_pred_df (pd.DataFrame): Predictions with true labels and probabilities.
     """
-    if model_name_labels is None:
-        model_name_labels = {name: name for name in model_names}
+    if model_labels is None:
+        model_labels = {name: name for name in model_names}
 
     results_list = []
     all_predictions = []
@@ -317,7 +317,7 @@ def run_model_experiments(
         frac_label = f"{frac*100:.1f}%"
 
         for model_name in model_names:
-            model_label = model_name_labels.get(model_name, model_name)
+            model_label = model_labels.get(model_name, model_name)
             print(f"\n=== FINAL TEST EVAL | MODEL: {model_label} | FRACTION: {frac_label} ===")
 
             # `trainer` not used, but required for unpacking the results

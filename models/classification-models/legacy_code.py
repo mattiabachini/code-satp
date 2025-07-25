@@ -291,4 +291,29 @@
 
 #     return results_df, full_pred_df
 
+# #### Notebook Utility Function for Colab
+
+# import nbformat
+# from google.colab import _message
+# from nbformat import from_dict
+
+# # Get current notebook content as dict
+# nb_json = _message.blocking_request('get_ipynb')['ipynb']
+
+# # Remove broken widgets metadata
+# nb_json['metadata'].pop('widgets', None)
+
+# # Convert dict to NotebookNode (needed for nbformat.write)
+# nb_node = from_dict(nb_json)
+
+# # Save cleaned notebook
+# output_path = "/content/cleaned_notebook.ipynb"
+# with open(output_path, "w") as f:
+#     nbformat.write(nb_node, f)
+
+# # Download it
+# from google.colab import files
+# files.download(output_path)
+
+
 
