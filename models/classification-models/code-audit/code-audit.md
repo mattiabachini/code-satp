@@ -27,7 +27,8 @@
 4. Refactored code so that we have a single `model_utils.py` file that contains the data class and model training functions that then gets imported into the notebooks.
 5. Added `model_labels` as an argument to the `run_model_experiments()` function. 
 6. Added a `visualization_utils.py` file that contains the functions for visualizing the data. 
-
+7. Put the _utils files in the `utils` folder. Created a `__init__.py` file in the `utils` folder to make it a package. 
+8. Deleted `civiliantargettype.ipynb` because we did not get any results from it. Should explore other methods like using a decoder only model like `gpt-4o-mini` or `gpt-4o` or `gemini-2.0-flash` or `claude-3-5-sonnet` to see if we can get better results. 
 
 ## Potential diagram for the targettype model (or other multi-label classification models))
 
