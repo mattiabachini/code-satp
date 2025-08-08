@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 
+# Scatter plot for throughput vs accuracy
+
 def scatter_plot_speed_vs_accuracy(df, x_col, y_col, hue_col, size_col, title):
     """
     Creates a scatter (bubble) plot with customizable x and y axes.
@@ -43,6 +45,7 @@ def scatter_plot_speed_vs_accuracy(df, x_col, y_col, hue_col, size_col, title):
     plt.tight_layout()
     plt.show()
 
+# Heatmap for F1 scores by label
 
 def heatmap_label_f1_scores(
     df,
@@ -120,3 +123,40 @@ def heatmap_label_f1_scores(
     plt.yticks(rotation=0)
     plt.tight_layout()
     plt.show() 
+
+# Heatmap for plotting metrics by model and fraction
+
+def plot_heatmap(results_df, value, title_suffix=""):
+    """
+    Creates a heatmap where:
+      - Rows = Models (model_label)
+      - Columns = Fractions (fraction_label)  
+      - Cell Values = specified metric (color-coded)
+    """
+    # Pivot the DataFrame: index=Model, columns=Fraction, values=metric
+    heatmap_data = results_df.pivot(
+        index="model_label",
+        columns="fraction_label", 
+        values=value
+    )
+    
+    # Sort columns in ascending order of fraction
+    heatmap_data = heatmap_data[["3%", "6%", "12%", "25%", "50%", "100%"]]
+    
+    # Create the heatmap
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(
+        heatmap_data,
+        annot=True,         # writes the values in each cell
+        fmt=".3f",          # format for floating point
+        cmap="YlGnBu",      # color palette
+        cbar_kws={"label": value.replace("eval_", "").replace("_", " ").title()}
+    )
+    
+    # Labeling and layout
+    metric_name = value.replace("eval_", "").replace("_", " ").title()
+    plt.title(f"{metric_name} by Model and Data Fraction{title_suffix}")
+    plt.xlabel("Data Fraction")
+    plt.ylabel("Model")
+    plt.tight_layout()
+    plt.show()    
