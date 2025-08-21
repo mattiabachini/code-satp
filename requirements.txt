@@ -94,4 +94,4 @@ yarl==1.9.7
 scikit-multilearn==0.2.0
 imbalanced-learn==0.11.0
 PyGithub==2.2.0
-googletrans==4.0.0rc1
+googletrans==3.1.0a0

@@ -93,8 +93,9 @@ model, tokenizer = train_multitask_model(
 #### Integration Steps:
 
 ```python
-# Install required package
-!pip install googletrans==4.0.0rc1
+# Install required package (handles dependency conflicts)
+!pip install googletrans==3.1.0a0 --no-deps
+!pip install httpx==0.13.3 chardet==3.0.4 hstspreload
 
 # Use the augmentation function
 from enhanced_training_functions import train_transformer_model_with_augmentation
@@ -357,7 +358,7 @@ for metric, improvement in improvements.items():
    - Check if class imbalance is the main issue
 
 2. **Back-translation failing**:
-   - Install correct googletrans version: `pip install googletrans==4.0.0rc1`
+   - Install correct googletrans version: `pip install googletrans==3.1.0a0 --no-deps && pip install httpx==0.13.3 chardet==3.0.4 hstspreload`
    - Check internet connection for translation API
 
 3. **SMOTE memory issues**:

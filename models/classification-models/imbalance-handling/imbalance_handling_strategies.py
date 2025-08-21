@@ -145,7 +145,10 @@ class BackTranslationAugmentation:
             self.translator = Translator()
             self.available = True
         except ImportError:
-            print("Warning: googletrans not available. Install with: pip install googletrans==4.0.0rc1")
+            print("⚠️ Warning: googletrans not available for back-translation.")
+            print("🔧 Install with:")
+            print("   !pip install googletrans==3.1.0a0 --no-deps")
+            print("   !pip install httpx==0.13.3 chardet==3.0.4 hstspreload")
             self.available = False
     
     def augment_text(self, text, num_augmentations=1):
