@@ -89,3 +89,9 @@ weasel==0.4.1
 wrapt==1.16.0
 xxhash==3.5.0
 yarl==1.9.7
+
+# Additional packages needed for classification models
+scikit-multilearn==0.2.0
+imbalanced-learn==0.11.0
+PyGithub==2.2.0
+googletrans==4.0.0rc1
