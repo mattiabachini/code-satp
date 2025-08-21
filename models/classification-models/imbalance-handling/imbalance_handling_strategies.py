@@ -141,15 +141,21 @@ class BackTranslationAugmentation:
     def __init__(self, target_languages=['hi', 'ur', 'bn']):  # Hindi, Urdu, Bengali
         self.target_languages = target_languages
         try:
-            from googletrans import Translator
-            self.translator = Translator()
+            from deep_translator import GoogleTranslator
+            self.translator_class = GoogleTranslator
             self.available = True
+            print("✅ Using deep-translator for back-translation")
         except ImportError:
-            print("⚠️ Warning: googletrans not available for back-translation.")
-            print("🔧 Install with:")
-            print("   !pip install googletrans==3.1.0a0 --no-deps")
-            print("   !pip install httpx==0.13.3 chardet==3.0.4 hstspreload")
-            self.available = False
+            try:
+                from googletrans import Translator
+                self.translator = Translator()
+                self.available = True
+                self.use_googletrans = True
+                print("✅ Using googletrans for back-translation")
+            except ImportError:
+                print("⚠️ Warning: No translation library available for back-translation.")
+                print("🔧 Install with: !pip install deep-translator")
+                self.available = False
     
     def augment_text(self, text, num_augmentations=1):
         """
@@ -169,13 +175,24 @@ class BackTranslationAugmentation:
                 # Choose random target language
                 target_lang = np.random.choice(self.target_languages)
                 
-                # Translate to target language
-                translated = self.translator.translate(text, dest=target_lang)
+                if hasattr(self, 'translator_class'):  # Using deep-translator
+                    # Translate to target language
+                    translator_to = self.translator_class(source='en', target=target_lang)
+                    translated = translator_to.translate(text)
+                    
+                    # Translate back to English
+                    translator_back = self.translator_class(source=target_lang, target='en')
+                    back_translated = translator_back.translate(translated)
+                    
+                else:  # Using googletrans (fallback)
+                    # Translate to target language
+                    translated = self.translator.translate(text, dest=target_lang)
+                    
+                    # Translate back to English
+                    back_translated = self.translator.translate(translated.text, dest='en')
+                    back_translated = back_translated.text
                 
-                # Translate back to English
-                back_translated = self.translator.translate(translated.text, dest='en')
-                
-                augmented_texts.append(back_translated.text)
+                augmented_texts.append(back_translated)
                 
             except Exception as e:
                 print(f"Translation error: {e}")
