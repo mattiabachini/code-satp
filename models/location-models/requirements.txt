@@ -1,0 +1,5 @@
+# Requirements for location models (Colab-friendly)
+# Currently no additional dependencies beyond Colab defaults.
+# Add here if/when location notebooks import extra libraries.
+
+

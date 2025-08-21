@@ -1,0 +1,9 @@
+# Requirements for classification models (Colab-friendly)
+# Avoid installing Colab core packages (torch, numpy, pandas, etc.).
+
+imbalanced-learn>=0.11
+scikit-multilearn==0.2.0
+PyGithub>=2.2.0
+deep-translator>=1.11.4
+
+
