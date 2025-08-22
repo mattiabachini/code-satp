@@ -367,8 +367,7 @@ def run_model_experiments(
             stratifier = IterativeStratification(
                 n_splits=2,
                 order=1,
-                sample_distribution_per_fold=[frac, 1-frac],
-                random_state=random_state
+                sample_distribution_per_fold=[frac, 1-frac]
             )
             
             # Get stratified subset indices
