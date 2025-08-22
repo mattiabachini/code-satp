@@ -300,6 +300,7 @@ def run_model_experiments(
     df_val,
     df_test,
     model_names,
+    stratify_cols,
     output_csv="test_summary.csv",
     predictions_csv="test_predictions.csv",
     model_labels=None,
@@ -311,24 +312,38 @@ def run_model_experiments(
 ):
     """
     Runs post-tuning final experiments on the held-out test set by training models on
-    progressively larger subsets of the training pool.
+    progressively larger subsets of the training pool using stratified sampling.
+
+    This function maintains label distribution consistency across different training subset
+    sizes by using iterative stratification. This ensures that:
+    - Rare labels appear proportionally in all training subsets
+    - Model performance comparisons across data fractions are more meaningful
+    - Training subsets have balanced label distributions similar to the full dataset
 
     Parameters:
         df_train_pool (pd.DataFrame): Fixed training pool (from `create_fixed_splits()`).
         df_val (pd.DataFrame): Fixed validation set (for model selection during training).
         df_test (pd.DataFrame): Final held-out test set used for true evaluation.
+        model_names (list of str): HuggingFace model identifiers to evaluate.
         stratify_cols (list of str): Target column names for multi-label classification.
+                                   Used for stratified sampling to preserve label distributions.
         output_csv (str): Output path for saving the summary of test results.
         predictions_csv (str): Output path for saving all test predictions.
+        model_labels (dict, optional): Mapping from model name to human-readable label. If None, model names are used as labels.
         max_len (int): Max sequence length for tokenization.
         batch_size (int): Training/evaluation batch size.
         epochs (int): Number of training epochs.
         fractions (list of float): Fractions of training pool to use in experiments.
-        model_names (list of str): HuggingFace model identifiers to evaluate.
-        model_labels (dict, optional): Mapping from model name to human-readable label. If None, model names are used as labels.
+        random_state (int): Seed for reproducible stratified sampling.
+
     Returns:
         results_df (pd.DataFrame): Test metrics for all model/fraction combinations.
         full_pred_df (pd.DataFrame): Predictions with true labels and probabilities.
+
+    Notes:
+        - For 100% data fraction, the full training pool is used directly
+        - For smaller fractions, iterative stratification preserves multi-label distributions
+        - Original DataFrame indices are preserved for traceability across all subsets
     """
     if model_labels is None:
         model_labels = {name: name for name in model_names}
@@ -338,7 +353,31 @@ def run_model_experiments(
 
     for frac in fractions:
         subset_size = int(len(df_train_pool) * frac)
-        df_train_subset = df_train_pool.sample(n=subset_size, random_state=random_state)
+        
+        # Use stratified sampling to preserve label distribution
+        if frac == 1.0:
+            # Use the full training pool when fraction is 100%
+            df_train_subset = df_train_pool
+        else:
+            # Extract text and multi-label target arrays for stratified sampling
+            X_pool = df_train_pool["incident_summary"].values
+            y_pool = df_train_pool[stratify_cols].values
+            
+            # Create iterative stratification object for subset sampling
+            stratifier = IterativeStratification(
+                n_splits=2,
+                order=1,
+                sample_distribution_per_fold=[frac, 1-frac],
+                random_state=random_state
+            )
+            
+            # Get stratified subset indices
+            for subset_idx, _ in stratifier.split(X_pool, y_pool):
+                break
+                
+            # Create stratified subset using iloc to preserve original indices
+            df_train_subset = df_train_pool.iloc[subset_idx]
+        
         frac_label = f"{frac*100:.1f}%"
 
         for model_name in model_names:
