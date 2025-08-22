@@ -17,7 +17,8 @@ from .multilabel_utils import (
 # Import main functions from visualization_utils
 from .visualization_utils import (
     scatter_plot_speed_vs_accuracy,
-    heatmap_label_f1_scores
+    heatmap_label_f1_scores,
+    plot_heatmap,
 )
 
 # Define what gets imported with "from utils import *"
@@ -31,5 +32,6 @@ __all__ = [
     
     # Visualization utilities
     'scatter_plot_speed_vs_accuracy',
-    'heatmap_label_f1_scores'
-] 
+    'heatmap_label_f1_scores',
+    'plot_heatmap',
+]
