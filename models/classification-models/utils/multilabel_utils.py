@@ -1,4 +1,6 @@
 import pandas as pd
+import random
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 from sklearn.metrics import hamming_loss, accuracy_score, classification_report
@@ -46,16 +48,18 @@ def create_fixed_splits(
     """
     # Step 1: Split full data into train+val vs. test using iterative stratification
 
+    # Pre-shuffle once to avoid chronological bias while keeping determinism
+    df_full_shuf = df_full.sample(frac=1, random_state=random_state)
+
     # Extract text and multi-label target arrays
-    X = df_full["incident_summary"].values
-    y = df_full[stratify_cols].values
+    X = df_full_shuf["incident_summary"].values
+    y = df_full_shuf[stratify_cols].values
 
     # Create iterative stratification object
     stratifier = IterativeStratification(
         n_splits=2,
         order=1,
-        sample_distribution_per_fold=[1 - test_size, test_size],
-        random_state=random_state 
+        sample_distribution_per_fold=[1 - test_size, test_size]
     )
 
     # Unpack: stratifier.split() returns (smaller_set, larger_set) 
@@ -65,8 +69,8 @@ def create_fixed_splits(
 
     # Store the train+val and test DataFrames
     # Use .iloc to preserve original DataFrame indices
-    df_trainval = df_full.iloc[trainval_idx]
-    df_test = df_full.iloc[test_idx]
+    df_trainval = df_full_shuf.iloc[trainval_idx]
+    df_test = df_full_shuf.iloc[test_idx]
 
     # Step 2: Split trainval into training pool vs. validation set
 
@@ -78,8 +82,7 @@ def create_fixed_splits(
     stratifier2 = IterativeStratification(
         n_splits=2,
         order=1,
-        sample_distribution_per_fold=[1 - val_size, val_size],
-        random_state=random_state
+        sample_distribution_per_fold=[1 - val_size, val_size]
     )
 
     # Unpack: stratifier2.split() returns (smaller_set, larger_set) 
@@ -89,7 +92,7 @@ def create_fixed_splits(
 
     # Store the test, val, and train pool DataFrames
     # Use .iloc to preserve original DataFrame indices
-    df_test = df_full.iloc[test_idx]
+    df_test = df_full_shuf.iloc[test_idx]
     df_val = df_trainval.iloc[val_idx]
     df_train_pool = df_trainval.iloc[train_idx]
 
@@ -187,7 +190,8 @@ def train_transformer_model(
         df_test, 
         max_len=512, 
         batch_size=16, 
-        epochs=2
+        epochs=2,
+        seed=42
 ):
     """
     Trains a transformer model for multi-label classification using fixed train/val/test splits.
@@ -210,6 +214,13 @@ def train_transformer_model(
         pred_df (pd.DataFrame): DataFrame with true labels, predictions, probabilities,
                                 incident summary text, and original indices.
     """
+    # Set seeds for reproducibility (Python, NumPy, PyTorch, CUDA)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
     # Load tokenizer and model
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSequenceClassification.from_pretrained(
@@ -244,6 +255,8 @@ def train_transformer_model(
         greater_is_better=True,
         save_total_limit=2,
         report_to="none",
+        seed=seed,
+        data_seed=seed,
     )
 
     # Set up Trainer
