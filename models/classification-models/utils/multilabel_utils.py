@@ -3,7 +3,7 @@ import random
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from sklearn.metrics import hamming_loss, accuracy_score, classification_report
+from sklearn.metrics import hamming_loss, accuracy_score, classification_report, f1_score
 from skmultilearn.model_selection import IterativeStratification
 from transformers import (
     AutoTokenizer,
@@ -161,6 +161,9 @@ def compute_metrics(eval_pred, target_names):
     # Subset Accuracy
     subset_acc = accuracy_score(labels, predictions)
 
+    # Explicit micro-F1 for selection and reporting (maximize)
+    micro_f1 = f1_score(labels, predictions, average="micro", zero_division=0)
+
     # Classification Report
     report = classification_report(
         labels, predictions,
@@ -177,6 +180,7 @@ def compute_metrics(eval_pred, target_names):
     metrics = {
         "hamming_loss": hamming,
         "subset_accuracy": subset_acc,
+        "micro_f1": micro_f1,
     }
     metrics.update(report)
     return metrics
@@ -251,7 +255,7 @@ def train_transformer_model(
         logging_dir="./logs",
         logging_steps=10,
         load_best_model_at_end=True,
-        metric_for_best_model='eval_hamming_loss',
+        metric_for_best_model='eval_micro_f1',
         greater_is_better=True,
         save_total_limit=2,
         report_to="none",
@@ -307,8 +311,7 @@ def run_model_experiments(
     max_len=512,
     batch_size=16,
     epochs=2,
-    fractions=[1/32, 1/16, 1/8, 1/4, 1/2, 1.0],
-    random_state=42
+    fractions=[1/32, 1/16, 1/8, 1/4, 1/2, 1.0]
 ):
     """
     Runs post-tuning final experiments on the held-out test set by training models on
@@ -370,10 +373,10 @@ def run_model_experiments(
                 sample_distribution_per_fold=[frac, 1-frac]
             )
             
-            # Get stratified subset indices
-            for subset_idx, _ in stratifier.split(X_pool, y_pool):
-                break
-                
+            # Get stratified subset indices (split yields (train_idx, test_idx));
+            # take the test fold of size `frac` as our subset
+            _, subset_idx = next(stratifier.split(X_pool, y_pool))
+            
             # Create stratified subset using iloc to preserve original indices
             df_train_subset = df_train_pool.iloc[subset_idx]
         

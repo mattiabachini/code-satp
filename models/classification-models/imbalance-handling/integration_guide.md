@@ -111,6 +111,77 @@ trainer, test_results, pred_df = train_transformer_model_with_augmentation(
 - Should help with `mining_company` (54 → more diverse examples)
 - Free and easy to implement
 
+### 4. Validation-set Threshold Tuning (micro-F1)
+
+**Why it fits**: You report micro-F1; tuning the probability-to-label threshold on the validation set to maximize micro-F1 aligns training/selection with reporting and often yields modest gains without retraining.
+
+**Payoff**: +1–5 micro-F1 points on average; helps address miscalibration and class imbalance. Minimal code.
+
+**Resources**: Very low. Use existing validation predictions; no extra training.
+
+#### Integration Steps
+
+1. After training, get validation probabilities and labels via `Trainer.predict(val_dataset)`.
+2. Grid-search a global threshold that maximizes micro-F1 on the validation set.
+3. Optionally, compute per-label thresholds (higher variance on small validation sets, better for macro-F1/rare labels).
+4. Re-evaluate the test set by applying the chosen threshold(s) to test probabilities.
+
+#### Minimal Utilities
+
+```python
+import numpy as np
+from sklearn.metrics import f1_score
+
+def find_best_global_threshold(probs_val, y_val, grid=None):
+    if grid is None:
+        grid = np.linspace(0.05, 0.95, 19)
+    best_t, best_f1 = 0.5, -1.0
+    for t in grid:
+        preds = (probs_val >= t).astype(int)
+        f1 = f1_score(y_val, preds, average="micro", zero_division=0)
+        if f1 > best_f1:
+            best_t, best_f1 = t, f1
+    return best_t, best_f1
+
+def find_best_per_label_thresholds(probs_val, y_val, grid=None):
+    if grid is None:
+        grid = np.linspace(0.05, 0.95, 19)
+    num_labels = y_val.shape[1]
+    thresholds = np.full(num_labels, 0.5, dtype=float)
+    for j in range(num_labels):
+        best_t, best_f1 = 0.5, -1.0
+        for t in grid:
+            preds_j = (probs_val[:, j] >= t).astype(int)
+            f1 = f1_score(y_val[:, j], preds_j, average="binary", zero_division=0)
+            if f1 > best_f1:
+                best_t, best_f1 = t, f1
+        thresholds[j] = best_t
+    return thresholds
+```
+
+#### Usage Example (after training)
+
+```python
+# Validation predictions
+val_out = trainer.predict(val_dataset)
+val_probs = torch.sigmoid(torch.tensor(val_out.predictions)).numpy()
+val_labels = val_out.label_ids
+
+# Global threshold tuned for micro-F1
+best_t, _ = find_best_global_threshold(val_probs, val_labels)
+
+# Test predictions using tuned threshold
+test_out = trainer.predict(test_dataset)
+test_probs = torch.sigmoid(torch.tensor(test_out.predictions)).numpy()
+test_preds = (test_probs >= best_t).astype(int)
+
+from sklearn.metrics import f1_score
+test_micro_f1 = f1_score(test_out.label_ids, test_preds, average="micro", zero_division=0)
+print(f"Test micro-F1 (tuned threshold={best_t:.2f}): {test_micro_f1:.4f}")
+```
+
+> Note: Per-label thresholds can improve macro-F1 and some rare labels, but may overfit on small validation sets. Prefer global threshold for robustness; report both micro and macro if rare-label performance is a key objective.
+
 ## Tier 2: Medium-term Implementation (Good ROI)
 
 ### 4. SMOTE Variants (BorderlineSMOTE)
