@@ -141,13 +141,19 @@ class MultiLabelDataset(Dataset):
 
 ## Metrics function
 
-def compute_metrics(eval_pred, target_names):
+def compute_metrics(eval_pred, target_names, exclusive_label=None):
     """
     Compute evaluation metrics for multi-label classification.
     Includes Hamming Loss, Subset Accuracy, and Classification Report for all labels.
     """
     logits, labels = eval_pred
     predictions = (torch.sigmoid(torch.tensor(logits)) > 0.5).numpy()  # Apply threshold
+    # Optionally enforce exclusivity of a specific label (e.g., "no_target")
+    if exclusive_label is not None and exclusive_label in target_names:
+        exclusive_idx = target_names.index(exclusive_label)
+        other_indices = [i for i, name in enumerate(target_names) if i != exclusive_idx]
+        has_other = (predictions[:, other_indices].sum(axis=1) > 0)
+        predictions[has_other, exclusive_idx] = 0
     labels = labels.astype(int)
 
     # Verify Labels
@@ -195,7 +201,8 @@ def train_transformer_model(
         max_len=512, 
         batch_size=16, 
         epochs=2,
-        seed=42
+        seed=42,
+        exclusive_label=None
 ):
     """
     Trains a transformer model for multi-label classification using fixed train/val/test splits.
@@ -269,7 +276,7 @@ def train_transformer_model(
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
-        compute_metrics=lambda eval_pred: compute_metrics(eval_pred, target_names)
+        compute_metrics=lambda eval_pred: compute_metrics(eval_pred, target_names, exclusive_label=exclusive_label)
     )
 
     # Train the model
@@ -284,6 +291,12 @@ def train_transformer_model(
     # Convert to probabilities and binary predictions
     probs = torch.sigmoid(torch.tensor(logits)).numpy()
     binary_preds = (probs > 0.5).astype(int)
+    # Enforce exclusivity at test-time predictions as well if configured
+    if exclusive_label is not None and exclusive_label in target_names:
+        exclusive_idx = target_names.index(exclusive_label)
+        other_indices = [i for i, name in enumerate(target_names) if i != exclusive_idx]
+        has_other = (binary_preds[:, other_indices].sum(axis=1) > 0)
+        binary_preds[has_other, exclusive_idx] = 0
 
     # Build predictions DataFrame
     pred_df = pd.DataFrame()
@@ -311,7 +324,8 @@ def run_model_experiments(
     max_len=512,
     batch_size=16,
     epochs=2,
-    fractions=[1/32, 1/16, 1/8, 1/4, 1/2, 1.0]
+    fractions=[1/32, 1/16, 1/8, 1/4, 1/2, 1.0],
+    exclusive_label=None
 ):
     """
     Runs post-tuning final experiments on the held-out test set by training models on
@@ -394,7 +408,8 @@ def run_model_experiments(
                 df_test=df_test, # evaluate on holdout test set
                 max_len=max_len,
                 batch_size=batch_size,
-                epochs=epochs
+                epochs=epochs,
+                exclusive_label=exclusive_label
             ) 
 
             run_result = {
