@@ -46,6 +46,10 @@ def create_fixed_splits(
         - All DataFrames returned preserve the original index from df_full.
         - Iterative stratification ensures that rare labels are proportionally distributed across splits.
     """
+    # Restrict to only the text and specified label columns to avoid extra metadata columns
+    keep_cols = ["incident_summary"] + stratify_cols
+    df_full = df_full[keep_cols].copy()
+
     # Step 1: Split full data into train+val vs. test using iterative stratification
 
     # Pre-shuffle once to avoid chronological bias while keeping determinism
