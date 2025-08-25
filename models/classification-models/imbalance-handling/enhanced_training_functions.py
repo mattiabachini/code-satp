@@ -132,7 +132,7 @@ def train_transformer_model_with_focal_loss(
         logging_dir="./logs",
         logging_steps=10,
         load_best_model_at_end=True,
-        metric_for_best_model='eval_hamming_loss',
+        metric_for_best_model='eval_micro_f1',
         greater_is_better=True,
         save_total_limit=2,
         report_to="none",
@@ -470,6 +470,10 @@ def compute_metrics(eval_pred, target_names):
     # Subset Accuracy
     subset_acc = accuracy_score(labels, predictions)
 
+    # Micro-F1 (primary selection metric)
+    from sklearn.metrics import f1_score
+    micro_f1 = f1_score(labels, predictions, average="micro", zero_division=0)
+
     # Classification Report
     report = classification_report(
         labels, predictions,
@@ -481,6 +485,7 @@ def compute_metrics(eval_pred, target_names):
     metrics = {
         "hamming_loss": hamming,
         "subset_accuracy": subset_acc,
+        "micro_f1": micro_f1,
     }
     metrics.update(report)
     return metrics

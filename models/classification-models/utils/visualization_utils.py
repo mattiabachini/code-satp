@@ -160,3 +160,39 @@ def plot_heatmap(results_df, value, title_suffix=""):
     plt.ylabel("Model")
     plt.tight_layout()
     plt.show()    
+
+# Heatmap for strategy vs label (rows=labels, cols=strategies)
+
+def heatmap_label_f1_by_strategy(
+    df,
+    strategy_col="strategy",
+    label_col="label",
+    value_col="f1",
+    title="F1 Scores per Label across Imbalance Strategies",
+    note=None,
+    figsize=(10, 7),
+    cmap="cividis"
+):
+    """
+    Plot a heatmap with strategies on x-axis and labels on y-axis using per-label F1.
+
+    Parameters:
+    - df: long-form DataFrame with columns [strategy, label, f1]
+    - strategy_col: column name for strategies
+    - label_col: column name for labels
+    - value_col: column name for F1 values
+    - title: plot title
+    - note: optional subtitle/note
+    """
+    pivot = df.pivot(index=label_col, columns=strategy_col, values=value_col)
+    plt.figure(figsize=figsize)
+    ax = sns.heatmap(pivot, annot=True, fmt=".2f", cmap=cmap, cbar_kws={"label": "F1 Score"})
+    ax.set_xlabel("Strategy")
+    ax.set_ylabel("Label")
+    ax.set_title(title)
+    if note:
+        plt.figtext(0.5, -0.08, note, ha="center", fontsize=10)
+    plt.xticks(rotation=45, ha="right")
+    plt.yticks(rotation=0)
+    plt.tight_layout()
+    plt.show()
