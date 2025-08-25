@@ -534,7 +534,8 @@ def integrate_focal_loss(trainer, alpha=1, gamma=2):
     # Override the compute_loss method
     original_compute_loss = trainer.compute_loss
     
-    def compute_loss_with_focal(model, inputs, return_outputs=False):
+    def compute_loss_with_focal(model, inputs, return_outputs=False, **kwargs):
+        # Hugging Face Trainer may pass extra kwargs (e.g., num_items_in_batch); accept and ignore them
         outputs = model(**inputs)
         logits = outputs.logits
         labels = inputs.get("labels")

@@ -121,7 +121,13 @@ def train_with_class_weights(model_name, df_train, df_val, df_test, max_len=512,
             labels = inputs.pop("labels")
             outputs = model(**inputs)
             logits = outputs.logits
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels, pos_weight=pos_weight)
+            # Ensure tensors are on the same device
+            device = logits.device
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                logits,
+                labels.to(device),
+                pos_weight=pos_weight.to(device)
+            )
             return (loss, outputs) if return_outputs else loss
 
     trainer = WeightedBCETrainer(
