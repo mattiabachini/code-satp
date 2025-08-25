@@ -153,9 +153,9 @@ def train_transformer_model_with_focal_loss(
     # Train the model
     trainer.train()
 
-    # Final evaluation on test set
-    test_results = trainer.evaluate(test_dataset)
+    # Final evaluation on test set: use predict() to avoid duplicate metric printing
     predictions_output = trainer.predict(test_dataset)
+    test_results = predictions_output.metrics
     logits = predictions_output.predictions
     labels = predictions_output.label_ids
 
@@ -481,6 +481,13 @@ def compute_metrics(eval_pred, target_names):
         zero_division=0, output_dict=True
     )
 
+    # Uniform verbose prints to match utils.multilabel_utils.compute_metrics
+    print("Shape of labels:", labels.shape)
+    print("First few rows of labels:\n", labels[:5])
+    print("Final target names:", target_names)
+    print("\nFull Classification Report:")
+    print(classification_report(labels, predictions, target_names=target_names, zero_division=0))
+
     # Summary Metrics for Trainer
     metrics = {
         "hamming_loss": hamming,
@@ -517,17 +524,10 @@ def compare_strategies(
         print(f"\nTesting strategies: {strategies}")
         
         try:
-            if 'baseline' in strategies:
-                # Use original training function
-                from targettype import train_transformer_model
-                trainer, test_results, pred_df = train_transformer_model(
-                    model_name, df_train_pool, df_val, df_test, max_len, batch_size, epochs
-                )
-            else:
-                # Use enhanced training function
-                trainer, test_results, pred_df = train_transformer_model_with_focal_loss(
-                    model_name, df_train_pool, df_val, df_test, max_len, batch_size, epochs
-                )
+            # Use enhanced training function for consistency; avoids unresolved imports in demo path
+            trainer, test_results, pred_df = train_transformer_model_with_focal_loss(
+                model_name, df_train_pool, df_val, df_test, max_len, batch_size, epochs
+            )
             
             results[str(strategies)] = {
                 'hamming_loss': test_results.get('eval_hamming_loss', 0),

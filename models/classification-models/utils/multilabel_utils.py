@@ -286,9 +286,9 @@ def train_transformer_model(
     # Train the model
     trainer.train()
 
-    # Final evaluation on df_test 
-    test_results = trainer.evaluate(test_dataset)
+    # Final evaluation on df_test: use predict() once to both compute metrics and collect logits
     predictions_output = trainer.predict(test_dataset)
+    test_results = predictions_output.metrics
     logits = predictions_output.predictions
     labels = predictions_output.label_ids
 

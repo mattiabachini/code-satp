@@ -139,7 +139,7 @@ def train_with_class_weights(model_name, df_train, df_val, df_test, max_len=512,
     )
     trainer.train()
 
-    # Evaluate on test
+    # Evaluate on test: use predict() once to gather both metrics and logits
     predictions_output = trainer.predict(test_ds)
     logits = predictions_output.predictions
     labels = predictions_output.label_ids
@@ -154,8 +154,8 @@ def train_with_class_weights(model_name, df_train, df_val, df_test, max_len=512,
         pred_df[f"prob_{col}"] = probs[:, i]
     pred_df["incident_summary"] = df_test["incident_summary"].values
 
-    # Also compute standard metrics dict using the same function
-    test_results = trainer.evaluate(test_ds)
+    # Also compute standard metrics dict from predict() output to avoid duplicate prints
+    test_results = predictions_output.metrics
     return trainer, test_results, pred_df
 
 
@@ -258,27 +258,24 @@ def run_strategy_experiments(
     if "threshold_tuned" in strategies:
         try:
             print("\n[Strategy] threshold_tuned: starting...")
-            # Train baseline if not already available
-            if "baseline" not in per_strategy_reports or per_strategy_reports.get("baseline") is None:
-                _, base_metrics, base_pred_df = train_transformer_model(
-                    model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs
-                )
-            # Need val probs to pick thresholds
-            # Build baseline trainer quickly for val predict
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
-            model = AutoModelForSequenceClassification.from_pretrained(
-                model_name, num_labels=len(label_cols), problem_type="multi_label_classification"
+            # Always obtain a trained model to generate calibrated probabilities
+            # Train a clean baseline model here and reuse it for threshold selection
+            trained_trainer, _, _ = train_transformer_model(
+                model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs
             )
-            train_ds = MultiLabelDataset(df_train["incident_summary"].tolist(), df_train[label_cols].values, tokenizer, max_len)
+
+            # Build datasets for prediction (aligned with max_len/tokenization)
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
             val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
             test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
-            args = TrainingArguments(output_dir="./tmp", per_device_eval_batch_size=batch_size, report_to="none")
-            tmp_trainer = Trainer(model=model, args=args)
-            val_out = tmp_trainer.predict(val_ds)
+
+            # Get validation probabilities from the trained model
+            val_out = trained_trainer.predict(val_ds)
             val_probs = 1/(1+np.exp(-val_out.predictions))
             val_true = val_out.label_ids.astype(int)
             th = choose_thresholds_micro(val_probs, val_true)
-            test_out = tmp_trainer.predict(test_ds)
+            # Apply thresholds to test predictions from the trained model
+            test_out = trained_trainer.predict(test_ds)
             test_probs = 1/(1+np.exp(-test_out.predictions))
             test_true = test_out.label_ids.astype(int)
             test_pred = apply_thresholds(test_probs, th)
