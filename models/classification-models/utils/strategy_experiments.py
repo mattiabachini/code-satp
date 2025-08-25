@@ -30,9 +30,12 @@ def _load_augmented_trainer_fn():
     try:
         import importlib.util
         from pathlib import Path
+        import sys
         enhanced_path = (Path(__file__).resolve().parent.parent / "imbalance-handling" / "enhanced_training_functions.py")
         if not enhanced_path.exists():
             return None
+        # ensure sibling directory is importable for any relative imports inside the module
+        sys.path.insert(0, str(enhanced_path.parent))
         spec = importlib.util.spec_from_file_location("imbalance_enhanced_training_functions", str(enhanced_path))
         mod = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
@@ -114,7 +117,7 @@ def train_with_class_weights(model_name, df_train, df_val, df_test, max_len=512,
     )
 
     class WeightedBCETrainer(Trainer):
-        def compute_loss(self, model, inputs, return_outputs=False):
+        def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
             labels = inputs.pop("labels")
             outputs = model(**inputs)
             logits = outputs.logits
@@ -211,7 +214,7 @@ def run_strategy_experiments(
             focal = FocalLoss(alpha=1.0, gamma=2.0)
 
             class FocalTrainer(Trainer):
-                def compute_loss(self, model, inputs, return_outputs=False):
+                def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
                     labels = inputs.pop("labels")
                     outputs = model(**inputs)
                     logits = outputs.logits
@@ -322,7 +325,9 @@ def run_strategy_experiments(
         if metrics is None:
             continue
         for lbl in label_cols:
-            f1 = metrics.get(lbl, {}).get("f1-score", 0.0)
+            # metrics may store per-label reports under either the raw label key or an eval_-prefixed key
+            key = lbl if lbl in metrics else f"eval_{lbl}"
+            f1 = metrics.get(key, {}).get("f1-score", 0.0)
             rows.append({"strategy": strat_name, "label": lbl, "f1": f1})
     results_df = pd.DataFrame(rows)
 
