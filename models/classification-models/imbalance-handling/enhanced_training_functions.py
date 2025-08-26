@@ -184,7 +184,9 @@ def train_transformer_model_with_augmentation(
     batch_size=16, 
     epochs=2,
     augmentation_strategies=['back_translation'],
-    min_samples_per_class=50
+    min_samples_per_class=900,
+    max_new_per_label=500,
+    max_synth_to_real_ratio=1.0
 ):
     """
     Enhanced training function with data augmentation.
@@ -201,7 +203,10 @@ def train_transformer_model_with_augmentation(
     df_train_augmented = apply_imbalance_strategies(
         df_train, 
         target_names, 
-        strategies=augmentation_strategies
+        strategies=augmentation_strategies,
+        min_samples_per_class=min_samples_per_class,
+        max_new_per_label=max_new_per_label,
+        max_synth_to_real_ratio=max_synth_to_real_ratio
     )
     
     print(f"Original training set size: {len(df_train)}")

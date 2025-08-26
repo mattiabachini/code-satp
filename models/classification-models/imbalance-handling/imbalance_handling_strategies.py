@@ -200,7 +200,7 @@ class BackTranslationAugmentation:
         
         return augmented_texts
     
-    def augment_rare_classes(self, df, label_columns, min_samples=50):
+    def augment_rare_classes(self, df, label_columns, min_samples=50, max_new_per_label=500, max_synth_to_real_ratio=1.0):
         """
         Augment rare classes to have at least min_samples examples.
         
@@ -225,29 +225,35 @@ class BackTranslationAugmentation:
                 # Get examples of this rare class
                 rare_examples = df[df[col] == 1]
                 
-                # Calculate how many augmentations needed
-                needed = min_samples - len(rare_examples)
+                # Calculate how many augmentations needed (capped)
+                needed = max(min_samples - len(rare_examples), 0)
+                cap_by_ratio = int(len(rare_examples) * max_synth_to_real_ratio)
+                to_add = min(needed, max_new_per_label, cap_by_ratio)
                 
-                if needed <= 0:
+                if to_add <= 0:
                     continue
                 
-                print(f"Augmenting class '{col}' (rare class {rare_class}): {len(rare_examples)} -> {min_samples}")
+                print(f"Augmenting label '{col}': {len(rare_examples)} -> target {min_samples} (adding up to {to_add})")
                 
                 # Augment each example
+                added_for_label = 0
                 for _, row in rare_examples.iterrows():
-                    if len(augmented_data) >= needed:
+                    if added_for_label >= to_add:
                         break
                     
                     augmented_texts = self.augment_text(row['incident_summary'], num_augmentations=1)
                     
                     for aug_text in augmented_texts:
-                        if len(augmented_data) >= needed:
+                        if added_for_label >= to_add:
                             break
                         
                         # Create new row with augmented text
                         new_row = row.copy()
                         new_row['incident_summary'] = aug_text
                         augmented_data.append(new_row)
+                        added_for_label += 1
+                if added_for_label > 0:
+                    print(f"Added {added_for_label} synthetic rows for label '{col}'")
         
         # Combine original and augmented data
         if augmented_data:
@@ -567,7 +573,7 @@ def create_balanced_sampler(df, label_columns):
     
     return sampler
 
-def apply_imbalance_strategies(df, label_columns, strategies=None):
+def apply_imbalance_strategies(df, label_columns, strategies=None, min_samples_per_class=50, max_new_per_label=500, max_synth_to_real_ratio=1.0):
     """
     Apply multiple imbalance handling strategies to the dataset.
     
@@ -587,7 +593,13 @@ def apply_imbalance_strategies(df, label_columns, strategies=None):
     if 'back_translation' in strategies:
         print("Applying back-translation augmentation...")
         augmenter = BackTranslationAugmentation()
-        modified_df = augmenter.augment_rare_classes(modified_df, label_columns)
+        modified_df = augmenter.augment_rare_classes(
+            modified_df,
+            label_columns,
+            min_samples=min_samples_per_class,
+            max_new_per_label=max_new_per_label,
+            max_synth_to_real_ratio=max_synth_to_real_ratio
+        )
     
     if 'smote' in strategies:
         print("Applying SMOTE to embeddings...")
