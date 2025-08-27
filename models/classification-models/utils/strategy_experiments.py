@@ -273,12 +273,6 @@ def run_strategy_experiments(
             base_pred_df = base_pred_df.copy()
             base_pred_df["strategy"] = "baseline"
             all_predictions.append(base_pred_df)
-            # Add tuned results (per-label macro-F1)
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
-            base_tuned = tuned_metrics_from_trainer(
-                trainer, tokenizer, df_val, df_test, label_cols, max_len=max_len, objective="macro"
-            )
-            per_strategy_reports["baseline_tuned"] = base_tuned
             print("[Strategy] baseline: ✅ completed")
         except Exception as e:
             per_strategy_reports["baseline"] = None
@@ -321,53 +315,73 @@ def run_strategy_experiments(
             )
             trainer.train()
 
-            # Evaluate on test and also collect probabilities for PR/thresholding
-            predictions_output = trainer.predict(test_ds)
-            test_results = predictions_output.metrics
-            per_strategy_reports["focal"] = test_results
-
-            # Build pred_df with true/pred/prob per label
-            logits = predictions_output.predictions
-            labels = predictions_output.label_ids
-            probs = torch.sigmoid(torch.tensor(logits)).numpy()
-            bin_preds = (probs > 0.5).astype(int)
-            focal_pred_df = pd.DataFrame()
-            for i, col in enumerate(label_cols):
-                focal_pred_df[f"true_{col}"] = labels[:, i]
-                focal_pred_df[f"pred_{col}"] = bin_preds[:, i]
-                focal_pred_df[f"prob_{col}"] = probs[:, i]
-            focal_pred_df["incident_summary"] = df_test["incident_summary"].values
-            focal_pred_df["strategy"] = "focal"
-            all_predictions.append(focal_pred_df)
-            # Tuned variant
+            # Per-label macro-F1 tuned variant only
             tokenizer = AutoTokenizer.from_pretrained(model_name)
-            focal_tuned = tuned_metrics_from_trainer(
-                trainer, tokenizer, df_val, df_test, label_cols, max_len=max_len, objective="macro"
-            )
-            per_strategy_reports["focal_tuned"] = focal_tuned
+            val_out = trainer.predict(val_ds)
+            test_out = trainer.predict(test_ds)
+            val_probs = 1/(1+np.exp(-val_out.predictions))
+            test_probs = 1/(1+np.exp(-test_out.predictions))
+            th = choose_thresholds(val_probs, val_out.label_ids.astype(int), objective="macro")
+            test_true = test_out.label_ids.astype(int)
+            test_pred = apply_thresholds(test_probs, th)
+
+            from sklearn.metrics import classification_report, f1_score, hamming_loss, accuracy_score
+            report = classification_report(test_true, test_pred, target_names=label_cols, zero_division=0, output_dict=True)
+            micro_f1 = f1_score(test_true, test_pred, average="micro", zero_division=0)
+            metrics = {
+                "hamming_loss": hamming_loss(test_true, test_pred),
+                "subset_accuracy": accuracy_score(test_true, test_pred),
+                "micro_f1": micro_f1,
+            }
+            metrics.update(report)
+            per_strategy_reports["focal_tuned"] = metrics
+
+            # Save tuned predictions for PR curves
+            focal_tuned_df = pd.DataFrame()
+            for i, col in enumerate(label_cols):
+                focal_tuned_df[f"true_{col}"] = test_true[:, i]
+                focal_tuned_df[f"pred_{col}"] = test_pred[:, i]
+                focal_tuned_df[f"prob_{col}"] = test_probs[:, i]
+            focal_tuned_df["incident_summary"] = df_test["incident_summary"].values
+            focal_tuned_df["strategy"] = "focal_tuned"
+            all_predictions.append(focal_tuned_df)
             print("[Strategy] focal: ✅ completed")
         except Exception as e:
             per_strategy_reports["focal"] = None
             print(f"[Strategy] focal: ❌ failed — {e}")
 
-    # Class-weighted
+    # Class-weighted (report tuned only)
     if "class_weights" in strategies:
         try:
             print("\n[Strategy] class_weights: starting...")
             trainer, cw_metrics, cw_pred_df = train_with_class_weights(
                 model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs
             )
-            per_strategy_reports["class_weights"] = cw_metrics
-            # Keep predictions with probabilities
-            cw_pred_df = cw_pred_df.copy()
-            cw_pred_df["strategy"] = "class_weights"
-            all_predictions.append(cw_pred_df)
             # Tuned variant — reuse tokenizer; compute predictions through trainer.predict
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             cw_tuned = tuned_metrics_from_trainer(
                 trainer, tokenizer, df_val, df_test, label_cols, max_len=max_len, objective="macro"
             )
             per_strategy_reports["class_weights_tuned"] = cw_tuned
+            # Save tuned predictions for PR curves
+            # Recompute test probs via trainer.predict for consistency
+            val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
+            test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
+            val_out = trainer.predict(val_ds)
+            test_out = trainer.predict(test_ds)
+            val_probs = 1/(1+np.exp(-val_out.predictions))
+            test_probs = 1/(1+np.exp(-test_out.predictions))
+            th = choose_thresholds(val_probs, val_out.label_ids.astype(int), objective="macro")
+            test_true = test_out.label_ids.astype(int)
+            test_pred = apply_thresholds(test_probs, th)
+            cw_tuned_df = pd.DataFrame()
+            for i, col in enumerate(label_cols):
+                cw_tuned_df[f"true_{col}"] = test_true[:, i]
+                cw_tuned_df[f"pred_{col}"] = test_pred[:, i]
+                cw_tuned_df[f"prob_{col}"] = test_probs[:, i]
+            cw_tuned_df["incident_summary"] = df_test["incident_summary"].values
+            cw_tuned_df["strategy"] = "class_weights_tuned"
+            all_predictions.append(cw_tuned_df)
             print("[Strategy] class_weights: ✅ completed")
         except Exception as e:
             per_strategy_reports["class_weights"] = None
@@ -427,13 +441,13 @@ def run_strategy_experiments(
             per_strategy_reports["threshold_tuned"] = None
             print(f"[Strategy] threshold_tuned: ❌ failed — {e}")
 
-    # Weighted sampler placeholder: reuse class-weighted trainer for now (sampler could be added later)
+    # Weighted sampler placeholder: mirror class_weights_tuned
     if "weighted_sampler" in strategies and "weighted_sampler" not in per_strategy_reports:
-        per_strategy_reports["weighted_sampler"] = per_strategy_reports.get("class_weights")
-        print("\n[Strategy] weighted_sampler: ✅ completed (alias of class_weights)")
+        per_strategy_reports["weighted_sampler_tuned"] = per_strategy_reports.get("class_weights_tuned")
+        print("\n[Strategy] weighted_sampler_tuned: ✅ completed (alias of class_weights_tuned)")
 
     # Augmentation
-    # Augmentation via back-translation (uses the enhanced module if available)
+    # Augmentation via back-translation (report tuned only)
     if "augmentation_bt" in strategies:
         train_with_aug = _load_augmented_trainer_fn()
         if train_with_aug is None:
@@ -446,23 +460,36 @@ def run_strategy_experiments(
                     max_len=max_len, batch_size=batch_size, epochs=epochs,
                     augmentation_strategies=['back_translation']
                 )
-                per_strategy_reports["augmentation_bt"] = aug_metrics
-                # Keep predictions with probabilities
-                aug_pred_df = aug_pred_df.copy()
-                aug_pred_df["strategy"] = "augmentation_bt"
-                all_predictions.append(aug_pred_df)
                 # Tuned variant
                 tokenizer = AutoTokenizer.from_pretrained(model_name)
                 aug_bt_tuned = tuned_metrics_from_trainer(
                     trainer, tokenizer, df_val, df_test, label_cols, max_len=max_len, objective="macro"
                 )
                 per_strategy_reports["augmentation_bt_tuned"] = aug_bt_tuned
+                # Save tuned predictions
+                val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
+                test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
+                val_out = trainer.predict(val_ds)
+                test_out = trainer.predict(test_ds)
+                val_probs = 1/(1+np.exp(-val_out.predictions))
+                test_probs = 1/(1+np.exp(-test_out.predictions))
+                th = choose_thresholds(val_probs, val_out.label_ids.astype(int), objective="macro")
+                test_true = test_out.label_ids.astype(int)
+                test_pred = apply_thresholds(test_probs, th)
+                aug_bt_tuned_df = pd.DataFrame()
+                for i, col in enumerate(label_cols):
+                    aug_bt_tuned_df[f"true_{col}"] = test_true[:, i]
+                    aug_bt_tuned_df[f"pred_{col}"] = test_pred[:, i]
+                    aug_bt_tuned_df[f"prob_{col}"] = test_probs[:, i]
+                aug_bt_tuned_df["incident_summary"] = df_test["incident_summary"].values
+                aug_bt_tuned_df["strategy"] = "augmentation_bt_tuned"
+                all_predictions.append(aug_bt_tuned_df)
                 print("[Strategy] augmentation_bt: ✅ completed")
             except Exception as e:
                 print(f"[Strategy] augmentation_bt: ❌ failed — {e}")
-                per_strategy_reports["augmentation_bt"] = None
+                per_strategy_reports["augmentation_bt_tuned"] = None
 
-    # Augmentation via T5 paraphrase (uses the enhanced module if available)
+    # Augmentation via T5 paraphrase (report tuned only)
     if "augmentation_t5" in strategies:
         train_with_aug = _load_augmented_trainer_fn()
         if train_with_aug is None:
@@ -475,16 +502,33 @@ def run_strategy_experiments(
                     max_len=max_len, batch_size=batch_size, epochs=epochs,
                     augmentation_strategies=['t5_paraphrase']
                 )
-                per_strategy_reports["augmentation_t5"] = aug_metrics
                 tokenizer = AutoTokenizer.from_pretrained(model_name)
                 aug_t5_tuned = tuned_metrics_from_trainer(
                     trainer, tokenizer, df_val, df_test, label_cols, max_len=max_len, objective="macro"
                 )
                 per_strategy_reports["augmentation_t5_tuned"] = aug_t5_tuned
+                # Save tuned predictions
+                val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
+                test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
+                val_out = trainer.predict(val_ds)
+                test_out = trainer.predict(test_ds)
+                val_probs = 1/(1+np.exp(-val_out.predictions))
+                test_probs = 1/(1+np.exp(-test_out.predictions))
+                th = choose_thresholds(val_probs, val_out.label_ids.astype(int), objective="macro")
+                test_true = test_out.label_ids.astype(int)
+                test_pred = apply_thresholds(test_probs, th)
+                aug_t5_tuned_df = pd.DataFrame()
+                for i, col in enumerate(label_cols):
+                    aug_t5_tuned_df[f"true_{col}"] = test_true[:, i]
+                    aug_t5_tuned_df[f"pred_{col}"] = test_pred[:, i]
+                    aug_t5_tuned_df[f"prob_{col}"] = test_probs[:, i]
+                aug_t5_tuned_df["incident_summary"] = df_test["incident_summary"].values
+                aug_t5_tuned_df["strategy"] = "augmentation_t5_tuned"
+                all_predictions.append(aug_t5_tuned_df)
                 print("[Strategy] augmentation_t5: ✅ completed")
             except Exception as e:
                 print(f"[Strategy] augmentation_t5: ❌ failed — {e}")
-                per_strategy_reports["augmentation_t5"] = None
+                per_strategy_reports["augmentation_t5_tuned"] = None
 
     # Build long-form results for plotting strategy heatmap
     rows = []
