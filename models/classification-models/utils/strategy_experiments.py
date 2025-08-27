@@ -79,6 +79,81 @@ def apply_thresholds(probs, thresholds):
     return (probs >= thresholds[None, :]).astype(int)
 
 
+# =============================================================================
+# Per-label threshold tuning helpers (macro- or micro-F1 objective)
+# =============================================================================
+
+def _apply_thresholds(probs, th):
+    return (probs >= th[None, :]).astype(int)
+
+
+def choose_thresholds(val_probs, val_true, objective="macro", grid=np.linspace(0.05, 0.95, 19), max_iters=3):
+    """
+    Coordinate-ascent per-label threshold tuning on validation set.
+
+    objective: "macro" or "micro" F1.
+    Returns an array of thresholds, one per label.
+    """
+    from sklearn.metrics import f1_score
+
+    n_labels = val_true.shape[1]
+    th = np.full(n_labels, 0.5, dtype=float)
+    avg = "micro" if objective == "micro" else "macro"
+
+    def score_for(cur):
+        preds = _apply_thresholds(val_probs, cur)
+        return f1_score(val_true, preds, average=avg, zero_division=0)
+
+    best = score_for(th)
+    for _ in range(max_iters):
+        improved = False
+        for j in range(n_labels):
+            best_t, best_s = th[j], best
+            for t in grid:
+                trial = th.copy()
+                trial[j] = t
+                s = score_for(trial)
+                if s > best_s:
+                    best_t, best_s = t, s
+            if best_t != th[j]:
+                th[j] = best_t
+                best = best_s
+                improved = True
+        if not improved:
+            break
+    return th
+
+
+def tuned_metrics_from_trainer(trainer, tokenizer, df_val, df_test, label_cols, max_len=512, objective="macro"):
+    """
+    Compute test metrics after tuning per-label thresholds on validation set.
+    Uses the provided trained Trainer to generate probabilities.
+    """
+    from sklearn.metrics import classification_report, f1_score, hamming_loss, accuracy_score
+
+    val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
+    test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
+
+    val_out = trainer.predict(val_ds)
+    test_out = trainer.predict(test_ds)
+    val_probs = 1 / (1 + np.exp(-val_out.predictions))
+    test_probs = 1 / (1 + np.exp(-test_out.predictions))
+
+    th = choose_thresholds(val_probs, val_out.label_ids.astype(int), objective=objective)
+    test_true = test_out.label_ids.astype(int)
+    test_pred = _apply_thresholds(test_probs, th)
+
+    report = classification_report(test_true, test_pred, target_names=label_cols, zero_division=0, output_dict=True)
+    micro_f1 = f1_score(test_true, test_pred, average="micro", zero_division=0)
+    metrics = {
+        "hamming_loss": hamming_loss(test_true, test_pred),
+        "subset_accuracy": accuracy_score(test_true, test_pred),
+        "micro_f1": micro_f1,
+    }
+    metrics.update(report)
+    return metrics
+
+
 def _pos_weight_from_df(df, label_cols):
     P = df[label_cols].sum(axis=0).values.astype(np.float32)
     N = len(df) - P
@@ -168,7 +243,9 @@ def run_strategy_experiments(
     strategies=None,
     max_len=512,
     batch_size=16,
-    epochs=2
+    epochs=2,
+    results_csv=None,
+    predictions_csv=None
 ):
     if strategies is None:
         strategies = [
@@ -181,17 +258,27 @@ def run_strategy_experiments(
             # "augmentation_t5",  # enable explicitly when needed
         ]
 
-    results = []
     per_strategy_reports = {}
+    all_predictions = []
 
     # Baseline
     if "baseline" in strategies:
         try:
             print("\n[Strategy] baseline: starting...")
-            _, base_metrics, base_pred_df = train_transformer_model(
+            trainer, base_metrics, base_pred_df = train_transformer_model(
                 model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs
             )
             per_strategy_reports["baseline"] = base_metrics
+            # attach strategy label and retain probabilities for downstream PR/AUPRC
+            base_pred_df = base_pred_df.copy()
+            base_pred_df["strategy"] = "baseline"
+            all_predictions.append(base_pred_df)
+            # Add tuned results (per-label macro-F1)
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            base_tuned = tuned_metrics_from_trainer(
+                trainer, tokenizer, df_val, df_test, label_cols, max_len=max_len, objective="macro"
+            )
+            per_strategy_reports["baseline_tuned"] = base_tuned
             print("[Strategy] baseline: ✅ completed")
         except Exception as e:
             per_strategy_reports["baseline"] = None
@@ -234,9 +321,30 @@ def run_strategy_experiments(
             )
             trainer.train()
 
-            # Evaluate on test
-            test_results = trainer.evaluate(test_ds)
+            # Evaluate on test and also collect probabilities for PR/thresholding
+            predictions_output = trainer.predict(test_ds)
+            test_results = predictions_output.metrics
             per_strategy_reports["focal"] = test_results
+
+            # Build pred_df with true/pred/prob per label
+            logits = predictions_output.predictions
+            labels = predictions_output.label_ids
+            probs = torch.sigmoid(torch.tensor(logits)).numpy()
+            bin_preds = (probs > 0.5).astype(int)
+            focal_pred_df = pd.DataFrame()
+            for i, col in enumerate(label_cols):
+                focal_pred_df[f"true_{col}"] = labels[:, i]
+                focal_pred_df[f"pred_{col}"] = bin_preds[:, i]
+                focal_pred_df[f"prob_{col}"] = probs[:, i]
+            focal_pred_df["incident_summary"] = df_test["incident_summary"].values
+            focal_pred_df["strategy"] = "focal"
+            all_predictions.append(focal_pred_df)
+            # Tuned variant
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            focal_tuned = tuned_metrics_from_trainer(
+                trainer, tokenizer, df_val, df_test, label_cols, max_len=max_len, objective="macro"
+            )
+            per_strategy_reports["focal_tuned"] = focal_tuned
             print("[Strategy] focal: ✅ completed")
         except Exception as e:
             per_strategy_reports["focal"] = None
@@ -246,10 +354,20 @@ def run_strategy_experiments(
     if "class_weights" in strategies:
         try:
             print("\n[Strategy] class_weights: starting...")
-            _, cw_metrics, cw_pred_df = train_with_class_weights(
+            trainer, cw_metrics, cw_pred_df = train_with_class_weights(
                 model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs
             )
             per_strategy_reports["class_weights"] = cw_metrics
+            # Keep predictions with probabilities
+            cw_pred_df = cw_pred_df.copy()
+            cw_pred_df["strategy"] = "class_weights"
+            all_predictions.append(cw_pred_df)
+            # Tuned variant — reuse tokenizer; compute predictions through trainer.predict
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            cw_tuned = tuned_metrics_from_trainer(
+                trainer, tokenizer, df_val, df_test, label_cols, max_len=max_len, objective="macro"
+            )
+            per_strategy_reports["class_weights_tuned"] = cw_tuned
             print("[Strategy] class_weights: ✅ completed")
         except Exception as e:
             per_strategy_reports["class_weights"] = None
@@ -274,7 +392,8 @@ def run_strategy_experiments(
             val_out = trained_trainer.predict(val_ds)
             val_probs = 1/(1+np.exp(-val_out.predictions))
             val_true = val_out.label_ids.astype(int)
-            th = choose_thresholds_micro(val_probs, val_true)
+            # Use per-label macro-F1 tuning as requested
+            th = choose_thresholds(val_probs, val_true, objective="macro")
             # Apply thresholds to test predictions from the trained model
             test_out = trained_trainer.predict(test_ds)
             test_probs = 1/(1+np.exp(-test_out.predictions))
@@ -293,6 +412,16 @@ def run_strategy_experiments(
             }
             metrics.update(report)
             per_strategy_reports["threshold_tuned"] = metrics
+
+            # Also persist probabilities for PR curves
+            th_pred_df = pd.DataFrame()
+            for i, col in enumerate(label_cols):
+                th_pred_df[f"true_{col}"] = test_true[:, i]
+                th_pred_df[f"pred_{col}"] = test_pred[:, i]
+                th_pred_df[f"prob_{col}"] = test_probs[:, i]
+            th_pred_df["incident_summary"] = df_test["incident_summary"].values
+            th_pred_df["strategy"] = "threshold_tuned"
+            all_predictions.append(th_pred_df)
             print("[Strategy] threshold_tuned: ✅ completed")
         except Exception as e:
             per_strategy_reports["threshold_tuned"] = None
@@ -312,12 +441,22 @@ def run_strategy_experiments(
         else:
             try:
                 print("\n[Strategy] augmentation_bt: starting...")
-                _, aug_metrics, _ = train_with_aug(
+                trainer, aug_metrics, aug_pred_df = train_with_aug(
                     model_name, df_train, df_val, df_test,
                     max_len=max_len, batch_size=batch_size, epochs=epochs,
                     augmentation_strategies=['back_translation']
                 )
                 per_strategy_reports["augmentation_bt"] = aug_metrics
+                # Keep predictions with probabilities
+                aug_pred_df = aug_pred_df.copy()
+                aug_pred_df["strategy"] = "augmentation_bt"
+                all_predictions.append(aug_pred_df)
+                # Tuned variant
+                tokenizer = AutoTokenizer.from_pretrained(model_name)
+                aug_bt_tuned = tuned_metrics_from_trainer(
+                    trainer, tokenizer, df_val, df_test, label_cols, max_len=max_len, objective="macro"
+                )
+                per_strategy_reports["augmentation_bt_tuned"] = aug_bt_tuned
                 print("[Strategy] augmentation_bt: ✅ completed")
             except Exception as e:
                 print(f"[Strategy] augmentation_bt: ❌ failed — {e}")
@@ -331,12 +470,17 @@ def run_strategy_experiments(
         else:
             try:
                 print("\n[Strategy] augmentation_t5: starting...")
-                _, aug_metrics, _ = train_with_aug(
+                trainer, aug_metrics, _ = train_with_aug(
                     model_name, df_train, df_val, df_test,
                     max_len=max_len, batch_size=batch_size, epochs=epochs,
                     augmentation_strategies=['t5_paraphrase']
                 )
                 per_strategy_reports["augmentation_t5"] = aug_metrics
+                tokenizer = AutoTokenizer.from_pretrained(model_name)
+                aug_t5_tuned = tuned_metrics_from_trainer(
+                    trainer, tokenizer, df_val, df_test, label_cols, max_len=max_len, objective="macro"
+                )
+                per_strategy_reports["augmentation_t5_tuned"] = aug_t5_tuned
                 print("[Strategy] augmentation_t5: ✅ completed")
             except Exception as e:
                 print(f"[Strategy] augmentation_t5: ❌ failed — {e}")
@@ -352,16 +496,29 @@ def run_strategy_experiments(
             for key in (lbl, f"eval_{lbl}", f"test_{lbl}"):
                 if key in metrics and isinstance(metrics[key], dict):
                     f1 = metrics[key].get("f1-score", 0.0)
+                    prec = metrics[key].get("precision", 0.0)
+                    rec = metrics[key].get("recall", 0.0)
                     break
             else:
-                f1 = 0.0
-            rows.append({"strategy": strat_name, "label": lbl, "f1": f1})
+                f1, prec, rec = 0.0, 0.0, 0.0
+            rows.append({"strategy": strat_name, "label": lbl, "f1": f1, "precision": prec, "recall": rec})
     results_df = pd.DataFrame(rows)
 
     # Pivot is often handy to save directly; guard for empty results
     if results_df.empty:
+        # Optionally save empty CSVs to keep downstream steps simple
+        if results_csv is not None:
+            results_df.to_csv(results_csv, index=False)
+        if predictions_csv is not None and len(all_predictions) > 0:
+            pd.concat(all_predictions, ignore_index=True).to_csv(predictions_csv, index=False)
         return pd.DataFrame(), results_df
     pivot = results_df.pivot(index="label", columns="strategy", values="f1")
+    # Optional persistence of results and predictions
+    if results_csv is not None:
+        results_df.to_csv(results_csv, index=False)
+    if predictions_csv is not None and len(all_predictions) > 0:
+        combined_pred_df = pd.concat(all_predictions, ignore_index=True)
+        combined_pred_df.to_csv(predictions_csv, index=False)
     return pivot, results_df
 
 
