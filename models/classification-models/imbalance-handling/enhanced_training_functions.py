@@ -87,17 +87,20 @@ def train_transformer_model_with_focal_loss(
     that adds Focal Loss to handle class imbalance.
     """
     
-    # Load tokenizer and model
+    # Identify label columns (exclude metadata columns introduced by augmentation)
+    target_names = [
+        col for col in df_train.columns
+        if col not in ("incident_summary", "is_synthetic", "synthetic_source")
+    ]
+
+    # Load tokenizer and model with the correct number of labels
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSequenceClassification.from_pretrained(
         model_name,
-        num_labels=df_train.shape[1] - 1,  # All columns except 'incident_summary'
+        num_labels=len(target_names),
         problem_type="multi_label_classification",
     )
     model.to("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Identify label columns
-    target_names = [col for col in df_train.columns if col != "incident_summary"]
 
     # Prepare datasets
     train_dataset = EnhancedMultiLabelDataset(
@@ -219,6 +222,9 @@ def train_transformer_model_with_augmentation(
     
     print(f"Original training set size: {len(df_train)}")
     print(f"Augmented training set size: {len(df_train_augmented)}")
+
+    # Drop augmentation metadata columns before training to keep label space consistent
+    df_train_augmented = df_train_augmented.drop(columns=["is_synthetic", "synthetic_source"], errors="ignore")
     
     # Now train with the augmented data
     return train_transformer_model_with_focal_loss(
