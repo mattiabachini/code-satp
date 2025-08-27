@@ -186,7 +186,11 @@ def train_transformer_model_with_augmentation(
     augmentation_strategies=['back_translation'],
     min_samples_per_class=900,
     max_new_per_label=500,
-    max_synth_to_real_ratio=1.0
+    max_synth_to_real_ratio=1.0,
+    embedding_model_name=None,
+    embedding_max_len=512,
+    embedding_batch_size=32,
+    embedding_device=None
 ):
     """
     Enhanced training function with data augmentation.
@@ -206,7 +210,11 @@ def train_transformer_model_with_augmentation(
         strategies=augmentation_strategies,
         min_samples_per_class=min_samples_per_class,
         max_new_per_label=max_new_per_label,
-        max_synth_to_real_ratio=max_synth_to_real_ratio
+        max_synth_to_real_ratio=max_synth_to_real_ratio,
+        embedding_model_name=(embedding_model_name or model_name),
+        embedding_max_len=embedding_max_len,
+        embedding_batch_size=embedding_batch_size,
+        embedding_device=embedding_device
     )
     
     print(f"Original training set size: {len(df_train)}")

@@ -13,3 +13,7 @@ accelerate>=0.30
 datasets>=2.19
 sentencepiece>=0.1.99
 
+# Optional (local-only) LLM providers for augmentation — comment out on Colab
+# openai  # uncomment locally to enable LLM augmentation
+# anthropic  # alternative provider for Claude models
+

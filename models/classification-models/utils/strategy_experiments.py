@@ -178,6 +178,7 @@ def run_strategy_experiments(
             "threshold_tuned",
             "weighted_sampler",  # placeholder uses class_weights trainer for now
             "augmentation_bt",
+            "augmentation_smote",
         ]
 
     results = []
@@ -322,15 +323,42 @@ def run_strategy_experiments(
                 print(f"[Strategy] augmentation_bt: ❌ failed — {e}")
                 per_strategy_reports["augmentation_bt"] = None
 
+    # Augmentation via SMOTE on embeddings (uses the enhanced module if available)
+    if "augmentation_smote" in strategies:
+        train_with_aug = _load_augmented_trainer_fn()
+        if train_with_aug is None:
+            print("\n[Strategy] augmentation_smote: ⚠️ augmentation trainer not available; skipping")
+        else:
+            try:
+                print("\n[Strategy] augmentation_smote: starting...")
+                _, aug_metrics, _ = train_with_aug(
+                    model_name, df_train, df_val, df_test,
+                    max_len=max_len, batch_size=batch_size, epochs=epochs,
+                    augmentation_strategies=['smote'],
+                    embedding_model_name=model_name,
+                    embedding_max_len=max_len,
+                    embedding_batch_size=max(8, batch_size),
+                    embedding_device=("cuda" if torch.cuda.is_available() else "cpu")
+                )
+                per_strategy_reports["augmentation_smote"] = aug_metrics
+                print("[Strategy] augmentation_smote: ✅ completed")
+            except Exception as e:
+                print(f"[Strategy] augmentation_smote: ❌ failed — {e}")
+                per_strategy_reports["augmentation_smote"] = None
+
     # Build long-form results for plotting strategy heatmap
     rows = []
     for strat_name, metrics in per_strategy_reports.items():
         if metrics is None:
             continue
         for lbl in label_cols:
-            # metrics may store per-label reports under either the raw label key or an eval_-prefixed key
-            key = lbl if lbl in metrics else f"eval_{lbl}"
-            f1 = metrics.get(key, {}).get("f1-score", 0.0)
+            # metrics may store per-label reports under raw, eval_, or test_ keys
+            for key in (lbl, f"eval_{lbl}", f"test_{lbl}"):
+                if key in metrics and isinstance(metrics[key], dict):
+                    f1 = metrics[key].get("f1-score", 0.0)
+                    break
+            else:
+                f1 = 0.0
             rows.append({"strategy": strat_name, "label": lbl, "f1": f1})
     results_df = pd.DataFrame(rows)
 

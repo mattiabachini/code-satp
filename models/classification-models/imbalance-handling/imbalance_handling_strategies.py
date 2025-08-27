@@ -274,34 +274,40 @@ class EmbeddingSMOTE:
     synthetic examples for rare classes.
     """
     
-    def __init__(self, model_name="bert-base-cased", max_len=512):
+    def __init__(self, model_name="bert-base-cased", max_len=512, batch_size=32, device=None):
         self.model_name = model_name
         self.max_len = max_len
+        self.batch_size = batch_size
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         from transformers import AutoTokenizer, AutoModel
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name)
+        self.model.to(self.device)
         self.model.eval()
     
     def get_embeddings(self, texts):
         """
-        Extract BERT embeddings for a list of texts.
+        Extract BERT embeddings for a list of texts using batched tokenization
+        and GPU acceleration when available.
         """
         embeddings = []
         
         with torch.no_grad():
-            for text in texts:
+            for start_idx in range(0, len(texts), self.batch_size):
+                batch_texts = texts[start_idx:start_idx + self.batch_size]
                 inputs = self.tokenizer(
-                    text, 
-                    max_length=self.max_len, 
-                    padding='max_length', 
-                    truncation=True, 
+                    batch_texts,
+                    max_length=self.max_len,
+                    padding='max_length',
+                    truncation=True,
                     return_tensors='pt'
                 )
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
                 
                 outputs = self.model(**inputs)
-                # Use [CLS] token embedding
-                embedding = outputs.last_hidden_state[:, 0, :].squeeze().numpy()
-                embeddings.append(embedding)
+                # Use [CLS] token embeddings
+                batch_embeddings = outputs.last_hidden_state[:, 0, :].detach().cpu().numpy()
+                embeddings.extend(batch_embeddings)
         
         return np.array(embeddings)
     
@@ -349,6 +355,8 @@ class EmbeddingSMOTE:
                         synthetic_row = df.iloc[i % len(df)].copy()
                         synthetic_row['incident_summary'] = f"[SYNTHETIC] {synthetic_row['incident_summary']}"
                         synthetic_row[col] = 1  # Set the target label
+                        synthetic_row['is_synthetic'] = 1
+                        synthetic_row['synthetic_source'] = 'smote'
                         augmented_data.append(synthetic_row)
                 
             except Exception as e:
@@ -488,44 +496,221 @@ class LLMSyntheticGeneration:
     LLM-based synthetic generation for rare classes.
     """
     
-    def __init__(self, api_key=None):
+    def __init__(
+        self,
+        provider="openai",
+        model=None,
+        api_key=None,
+        temperature=0.5,
+        max_tokens=400,
+        rate_limit_per_min=30
+    ):
+        self.provider = provider
         self.api_key = api_key
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.rate_limit_s = max(1.0 / max(rate_limit_per_min, 1), 0.5)
         self.available = api_key is not None
-    
-    def generate_synthetic_examples(self, class_name, num_examples=10, context=""):
-        """
-        Generate synthetic examples using LLM.
-        """
+
+        self.model = model or (
+            "gpt-4o-mini" if provider == "openai" else "claude-3-haiku-20240307"
+        )
+
+        self._client = None
         if not self.available:
-            return []
-        
+            print("⚠️ LLM generation unavailable: missing API key.")
+            return
+
         try:
-            import openai
-            
-            prompt = f"""
-            Generate {num_examples} realistic incident summaries that would be classified as "{class_name}" 
-            in the context of {context}. Each summary should be 1-3 sentences and describe a real-world 
-            incident that would fit this category.
-            
-            Format each example on a new line starting with "- ".
-            """
-            
-            response = openai.ChatCompletion.create(
+            if provider == "openai":
+                try:
+                    from openai import OpenAI
+                    self._client = OpenAI(api_key=api_key)
+                    self._is_new_openai = True
+                except Exception:
+                    import openai
+                    openai.api_key = api_key
+                    self._client = openai
+                    self._is_new_openai = False
+            elif provider == "anthropic":
+                import anthropic
+                self._client = anthropic.Anthropic(api_key=api_key)
+            else:
+                print(f"⚠️ Unknown provider '{provider}'.")
+                self.available = False
+        except Exception as e:
+            print(f"LLM client init failed: {e}")
+            self.available = False
+
+    def _build_prompt(self, class_name, class_definition="", few_shots=None, num_examples=5):
+        """
+        Build a concise, constrained prompt with few-shot in-domain examples.
+        """
+        few_shots = few_shots or []
+        header = (
+            f"You are generating incident summaries for the SATP dataset.\n"
+            f"Target label: {class_name}\n"
+            f"Definition/guidance: {class_definition.strip()}\n\n"
+            "Constraints:\n"
+            "- 1–3 sentences each; concise and factual; no dates/identifiers from real cases.\n"
+            "- Use neutral, report-like tone consistent with SATP style.\n"
+            "- Do not mention the label by name. Avoid policy claims or speculation.\n"
+            "- Avoid personally identifiable info; no exact copying of examples.\n"
+            f"Generate {num_examples} distinct examples.\n"
+            "Return each on a new line starting with '- '."
+        )
+        shots = ""
+        if few_shots:
+            ex_txt = "\n".join([f"- {t}" for t in few_shots[:5]])
+            shots = f"\n\nExamples (style and content archetypes):\n{ex_txt}\n"
+
+        return header + shots
+
+    def _call_openai(self, prompt):
+        import time
+        if self._is_new_openai:
+            resp = self._client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+            )
+            out = resp.choices[0].message.content
+        else:
+            out = self._client.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=500,
-                temperature=0.7
-            )
-            
-            # Parse response
-            examples = response.choices[0].message.content.split('\n')
-            examples = [ex.strip('- ') for ex in examples if ex.strip().startswith('- ')]
-            
-            return examples
-            
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+            ).choices[0].message["content"]
+        time.sleep(self.rate_limit_s)
+        return out
+
+    def _call_anthropic(self, prompt):
+        import time
+        msg = self._client.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        parts = []
+        for block in getattr(msg, "content", []) or []:
+            txt = getattr(block, "text", None)
+            if txt:
+                parts.append(txt)
+        time.sleep(self.rate_limit_s)
+        return "\n".join(parts) if parts else ""
+
+    def _generate(self, prompt):
+        if not self.available:
+            return ""
+        try:
+            if self.provider == "openai":
+                return self._call_openai(prompt)
+            if self.provider == "anthropic":
+                return self._call_anthropic(prompt)
         except Exception as e:
             print(f"LLM generation failed: {e}")
-            return []
+        return ""
+
+    @staticmethod
+    def _parse_bullets(text):
+        lines = [l.strip() for l in text.splitlines()]
+        out = []
+        for l in lines:
+            if not l:
+                continue
+            if l.startswith("- "):
+                out.append(l[2:].strip())
+            else:
+                out.append(l.strip("• ").strip())
+        out = [t for t in out if 20 <= len(t) <= 600]
+        return out
+
+    def generate_synthetic_examples(self, class_name, num_examples=10, class_definition="", few_shots=None):
+        """
+        Generate class-conditional examples with few-shot guidance.
+        """
+        prompt = self._build_prompt(
+            class_name, class_definition=class_definition, few_shots=few_shots, num_examples=num_examples
+        )
+        raw = self._generate(prompt)
+        return self._parse_bullets(raw)
+
+    def augment_rare_classes_with_llm(
+        self,
+        df,
+        label_columns,
+        label_to_definition=None,
+        min_samples=50,
+        max_new_per_label=500,
+        max_synth_to_real_ratio=1.0,
+        few_shots_per_label=3,
+        dedup=True
+    ):
+        """
+        For each label column (binary 0/1), top up rare positives with LLM-generated texts.
+
+        Adds a column 'is_synthetic'=1 for new rows.
+        """
+        if not self.available:
+            return df
+
+        label_to_definition = label_to_definition or {}
+        augmented_rows = []
+        for col in label_columns:
+            pos_df = df[df[col] == 1]
+            cur = len(pos_df)
+            needed = max(min_samples - cur, 0)
+            cap_by_ratio = int(cur * max_synth_to_real_ratio)
+            to_add = min(needed, max_new_per_label, cap_by_ratio)
+            if to_add <= 0:
+                continue
+
+            seeds = pos_df["incident_summary"].dropna().astype(str).tolist()
+            seeds = seeds[:few_shots_per_label] if len(seeds) >= few_shots_per_label else seeds
+
+            definition = label_to_definition.get(col, "")
+
+            print(f"LLM augment '{col}': {cur} -> target {min_samples} (adding up to {to_add})")
+            batch = 10
+            generated = []
+            remaining = to_add
+            while remaining > 0:
+                n = min(batch, remaining)
+                texts = self.generate_synthetic_examples(
+                    class_name=col,
+                    num_examples=n,
+                    class_definition=definition,
+                    few_shots=seeds
+                )
+                generated.extend(texts)
+                remaining -= len(texts)
+                if len(texts) == 0:
+                    break
+
+            if dedup:
+                existing = set(df["incident_summary"].astype(str).tolist())
+                generated = [t for t in generated if t not in existing]
+                generated = list(dict.fromkeys(generated))
+
+            for t in generated[:to_add]:
+                new_row = pos_df.iloc[0].copy() if cur > 0 else pd.Series({c: 0 for c in df.columns})
+                new_row["incident_summary"] = t
+                for l in label_columns:
+                    new_row[l] = 1 if l == col else new_row.get(l, 0)
+                new_row["is_synthetic"] = 1
+                augmented_rows.append(new_row)
+
+            if len(generated[:to_add]) > 0:
+                print(f"Added {len(generated[:to_add])} LLM-generated rows for '{col}'")
+
+        if augmented_rows:
+            aug_df = pd.DataFrame(augmented_rows)
+            return pd.concat([df, aug_df], ignore_index=True)
+
+        return df
 
 # =============================================================================
 # INTEGRATION HELPERS
@@ -573,7 +758,18 @@ def create_balanced_sampler(df, label_columns):
     
     return sampler
 
-def apply_imbalance_strategies(df, label_columns, strategies=None, min_samples_per_class=50, max_new_per_label=500, max_synth_to_real_ratio=1.0):
+def apply_imbalance_strategies(
+    df,
+    label_columns,
+    strategies=None,
+    min_samples_per_class=50,
+    max_new_per_label=500,
+    max_synth_to_real_ratio=1.0,
+    embedding_model_name=None,
+    embedding_max_len=512,
+    embedding_batch_size=32,
+    embedding_device=None,
+):
     """
     Apply multiple imbalance handling strategies to the dataset.
     
@@ -601,9 +797,32 @@ def apply_imbalance_strategies(df, label_columns, strategies=None, min_samples_p
             max_synth_to_real_ratio=max_synth_to_real_ratio
         )
     
+    if 'llm_generation' in strategies:
+        print("Applying LLM-based augmentation...")
+        # Read keys from env to avoid hardcoding
+        import os
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        provider = "openai" if os.getenv("OPENAI_API_KEY") else ("anthropic" if os.getenv("ANTHROPIC_API_KEY") else None)
+        if provider is None:
+            print("⚠️ No LLM API key found in env; skipping llm_generation.")
+        else:
+            llm = LLMSyntheticGeneration(provider=provider, api_key=api_key)
+            modified_df = llm.augment_rare_classes_with_llm(
+                modified_df,
+                label_columns,
+                min_samples=min_samples_per_class,
+                max_new_per_label=max_new_per_label,
+                max_synth_to_real_ratio=max_synth_to_real_ratio
+            )
+
     if 'smote' in strategies:
         print("Applying SMOTE to embeddings...")
-        smote_processor = EmbeddingSMOTE()
+        smote_processor = EmbeddingSMOTE(
+            model_name=embedding_model_name or "bert-base-cased",
+            max_len=embedding_max_len,
+            batch_size=embedding_batch_size,
+            device=embedding_device
+        )
         modified_df = smote_processor.apply_smote(modified_df, label_columns)
     
     return modified_df
@@ -619,9 +838,22 @@ def example_integration():
     
     # Example 1: Add Focal Loss to existing trainer
     def train_with_focal_loss(model_name, df_train, df_val, df_test, max_len=512, batch_size=16, epochs=2):
-        # Your existing training function
+        # Dynamically import to avoid package path issues
+        import importlib.util
+        from pathlib import Path
+        import sys
+        utils_path = (Path(__file__).resolve().parent.parent / "utils" / "multilabel_utils.py")
+        if not utils_path.exists():
+            raise FileNotFoundError(f"Could not locate {utils_path}")
+        sys.path.insert(0, str(utils_path.parent))
+        spec = importlib.util.spec_from_file_location("multilabel_utils_local", str(utils_path))
+        mod = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(mod)
+        train_transformer_model = getattr(mod, "train_transformer_model")
+
         trainer, test_results, pred_df = train_transformer_model(
-            model_name, df_train, df_val, df_test, max_len, batch_size, epochs
+            model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs
         )
         
         # Integrate focal loss
