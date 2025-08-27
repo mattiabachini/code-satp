@@ -178,7 +178,6 @@ def run_strategy_experiments(
             "threshold_tuned",
             "weighted_sampler",  # placeholder uses class_weights trainer for now
             "augmentation_bt",
-            "augmentation_smote",
         ]
 
     results = []
@@ -323,28 +322,7 @@ def run_strategy_experiments(
                 print(f"[Strategy] augmentation_bt: ❌ failed — {e}")
                 per_strategy_reports["augmentation_bt"] = None
 
-    # Augmentation via SMOTE on embeddings (uses the enhanced module if available)
-    if "augmentation_smote" in strategies:
-        train_with_aug = _load_augmented_trainer_fn()
-        if train_with_aug is None:
-            print("\n[Strategy] augmentation_smote: ⚠️ augmentation trainer not available; skipping")
-        else:
-            try:
-                print("\n[Strategy] augmentation_smote: starting...")
-                _, aug_metrics, _ = train_with_aug(
-                    model_name, df_train, df_val, df_test,
-                    max_len=max_len, batch_size=batch_size, epochs=epochs,
-                    augmentation_strategies=['smote'],
-                    embedding_model_name=model_name,
-                    embedding_max_len=max_len,
-                    embedding_batch_size=max(8, batch_size),
-                    embedding_device=("cuda" if torch.cuda.is_available() else "cpu")
-                )
-                per_strategy_reports["augmentation_smote"] = aug_metrics
-                print("[Strategy] augmentation_smote: ✅ completed")
-            except Exception as e:
-                print(f"[Strategy] augmentation_smote: ❌ failed — {e}")
-                per_strategy_reports["augmentation_smote"] = None
+    # SMOTE augmentation path removed
 
     # Build long-form results for plotting strategy heatmap
     rows = []

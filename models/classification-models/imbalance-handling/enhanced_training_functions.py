@@ -20,7 +20,7 @@ from skmultilearn.model_selection import IterativeStratification
 # Import our imbalance handling strategies
 from imbalance_handling_strategies import (
     FocalLoss, MultiTaskModel, BackTranslationAugmentation, 
-    EmbeddingSMOTE, ErrorAnalysisRefinement, integrate_focal_loss,
+    ErrorAnalysisRefinement, integrate_focal_loss,
     create_balanced_sampler, apply_imbalance_strategies
 )
 

@@ -8,13 +8,9 @@ Strategies included:
 1. Focal Loss Implementation
 2. Multi-task Learning Architecture  
 3. Data Augmentation (Back-translation)
-4. SMOTE Variants (BorderlineSMOTE)
-5. Error Analysis-Driven Label Refinement
-6. Hierarchical Label Organization
-7. LLM-based Synthetic Generation
-
-Author: AI Assistant
-Date: 2024
+4. Error Analysis-Driven Label Refinement
+5. Hierarchical Label Organization
+6. LLM-based Synthetic Generation
 """
 
 import torch
@@ -23,9 +19,6 @@ import torch.nn.functional as F
 import numpy as np
 import pandas as pd
 from sklearn.utils.class_weight import compute_class_weight
-from imblearn.over_sampling import BorderlineSMOTE
-from imblearn.under_sampling import RandomUnderSampler
-from imblearn.combine import SMOTEENN
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -200,7 +193,7 @@ class BackTranslationAugmentation:
         
         return augmented_texts
     
-    def augment_rare_classes(self, df, label_columns, min_samples=50, max_new_per_label=500, max_synth_to_real_ratio=1.0):
+    def augment_rare_classes(self, df, label_columns, min_samples=50, max_new_per_label=500, max_synth_to_real_ratio=1.0, seed=42, prefer_single_label=True):
         """
         Augment rare classes to have at least min_samples examples.
         
@@ -208,6 +201,8 @@ class BackTranslationAugmentation:
             df: DataFrame with 'incident_summary' and label columns
             label_columns: List of label column names
             min_samples: Minimum number of samples per class
+            seed: Random seed for reproducible selection of examples
+            prefer_single_label: Prefer positives with only this label to reduce drift
         """
         if not self.available:
             return df
@@ -222,12 +217,20 @@ class BackTranslationAugmentation:
                 if rare_class == 0:  # Skip negative class
                     continue
                 
-                # Get examples of this rare class
-                rare_examples = df[df[col] == 1]
+                # Get positives for this label
+                pos_df = df[df[col] == 1]
+                # Prefer single-label positives to minimize label drift
+                if prefer_single_label:
+                    single_label_pos = pos_df[pos_df[label_columns].sum(axis=1) == 1]
+                    pool = single_label_pos if len(single_label_pos) > 0 else pos_df
+                else:
+                    pool = pos_df
+                # Reproducible randomization of example order
+                rare_examples = pool.sample(frac=1.0, random_state=seed)
                 
                 # Calculate how many augmentations needed (capped)
-                needed = max(min_samples - len(rare_examples), 0)
-                cap_by_ratio = int(len(rare_examples) * max_synth_to_real_ratio)
+                needed = max(min_samples - len(pos_df), 0)
+                cap_by_ratio = int(len(pos_df) * max_synth_to_real_ratio)
                 to_add = min(needed, max_new_per_label, cap_by_ratio)
                 
                 if to_add <= 0:
@@ -263,112 +266,191 @@ class BackTranslationAugmentation:
         return df
 
 # =============================================================================
-# TIER 2: MEDIUM-TERM IMPLEMENTATION (GOOD ROI)
+# T5 PARAPHRASE AUGMENTATION
 # =============================================================================
 
-class EmbeddingSMOTE:
+class T5ParaphraseAugmentation:
     """
-    SMOTE for text embeddings to handle class imbalance.
+    Paraphrase-based augmentation using a T5/FLAN-T5 model.
     
-    This class applies SMOTE variants to BERT embeddings to generate
-    synthetic examples for rare classes.
+    Generates label-preserving paraphrases for positives of rare classes.
     """
     
-    def __init__(self, model_name="bert-base-cased", max_len=512, batch_size=32, device=None):
+    def __init__(self, model_name="google/flan-t5-large", device=None):
         self.model_name = model_name
-        self.max_len = max_len
-        self.batch_size = batch_size
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        from transformers import AutoTokenizer, AutoModel
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name)
-        self.model.to(self.device)
-        self.model.eval()
+        self.device = device  # e.g., "cuda" or "cpu"; if None, auto-select by HF pipeline
+        self._pipeline = None
+        self.available = True
+        # Semantic similarity embedder (sentence-transformers)
+        self.embedder_model_name = "sentence-transformers/all-MiniLM-L6-v2"
+        self._embedder = None
+        self.embedder_available = True
     
-    def get_embeddings(self, texts):
-        """
-        Extract BERT embeddings for a list of texts using batched tokenization
-        and GPU acceleration when available.
-        """
-        embeddings = []
-        
-        with torch.no_grad():
-            for start_idx in range(0, len(texts), self.batch_size):
-                batch_texts = texts[start_idx:start_idx + self.batch_size]
-                inputs = self.tokenizer(
-                    batch_texts,
-                    max_length=self.max_len,
-                    padding='max_length',
-                    truncation=True,
-                    return_tensors='pt'
-                )
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
-                
-                outputs = self.model(**inputs)
-                # Use [CLS] token embeddings
-                batch_embeddings = outputs.last_hidden_state[:, 0, :].detach().cpu().numpy()
-                embeddings.extend(batch_embeddings)
-        
-        return np.array(embeddings)
+    def _ensure_pipeline(self):
+        if self._pipeline is not None:
+            return
+        try:
+            from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+            tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
+            if self.device is not None:
+                self._pipeline = pipeline("text2text-generation", model=model, tokenizer=tokenizer, device=self.device)
+            else:
+                self._pipeline = pipeline("text2text-generation", model=model, tokenizer=tokenizer)
+        except Exception as e:
+            print(f"⚠️ T5 paraphraser unavailable: {e}")
+            self.available = False
     
-    def apply_smote(self, df, label_columns, sampling_strategy='auto'):
+    def paraphrase(self, text, num_return_sequences=2, temperature=0.7, top_p=0.9, max_new_tokens=64):
         """
-        Apply SMOTE to embeddings for each label.
-        
-        Args:
-            df: DataFrame with 'incident_summary' and label columns
-            label_columns: List of label column names
-            sampling_strategy: SMOTE sampling strategy
+        Generate paraphrases for a single text.
         """
-        print("Extracting BERT embeddings...")
-        embeddings = self.get_embeddings(df['incident_summary'].tolist())
+        if not self.available:
+            return []
+        self._ensure_pipeline()
+        if self._pipeline is None:
+            return []
+        prompt = (
+            "Paraphrase the following incident summary without changing meaning, entities, actors, or event type. "
+            "Use a neutral, report-like tone and do not add or remove facts.\n\n"
+            f"Text: {text}\n\nParaphrase:"
+        )
+        try:
+            outputs = self._pipeline(
+                prompt,
+                do_sample=True,
+                temperature=temperature,
+                top_p=top_p,
+                num_return_sequences=num_return_sequences,
+                max_new_tokens=max_new_tokens,
+            )
+            return [o.get("generated_text", "").strip() for o in outputs if o.get("generated_text")]
+        except Exception as e:
+            print(f"T5 generation error: {e}")
+            return []
+    
+    def _ensure_embedder(self):
+        if self._embedder is not None:
+            return
+        try:
+            from sentence_transformers import SentenceTransformer
+            self._embedder = SentenceTransformer(self.embedder_model_name)
+        except Exception as e:
+            print(f"⚠️ Similarity embedder unavailable: {e}")
+            self.embedder_available = False
+
+    @staticmethod
+    def _cosine_sim_matrix(a, b):
+        # a: (1, d) or (n, d); b: (m, d) -> sims shape (n, m)
+        a_norm = a / (np.linalg.norm(a, axis=1, keepdims=True) + 1e-12)
+        b_norm = b / (np.linalg.norm(b, axis=1, keepdims=True) + 1e-12)
+        return np.matmul(a_norm, b_norm.T)
+
+    def augment_rare_classes(
+        self,
+        df,
+        label_columns,
+        min_samples=50,
+        max_new_per_label=500,
+        max_synth_to_real_ratio=1.0,
+        seed=42,
+        prefer_single_label=True,
+        per_seed=1,
+        temperature=0.7,
+        top_p=0.9,
+        max_new_tokens=64,
+        dedup=True,
+        min_similarity=0.85,
+        max_similarity=0.98,
+        embedder_model_name=None
+    ):
+        """
+        Augment rare classes by adding paraphrases for positive examples.
+        """
+        if not self.available:
+            return df
+        self._ensure_pipeline()
+        if self._pipeline is None:
+            return df
+        # Prepare embedder for similarity filtering
+        if embedder_model_name:
+            self.embedder_model_name = embedder_model_name
+        self._ensure_embedder()
         
-        augmented_data = []
+        augmented_rows = []
+        existing_texts = set(df["incident_summary"].astype(str).tolist()) if dedup else set()
         
         for col in label_columns:
-            print(f"Applying SMOTE for label: {col}")
-            
-            # Get labels for this column
-            labels = df[col].values
-            
-            # Apply BorderlineSMOTE
-            smote = BorderlineSMOTE(sampling_strategy=sampling_strategy, random_state=42)
-            
-            try:
-                # Reshape embeddings for SMOTE
-                X_reshaped = embeddings.reshape(embeddings.shape[0], -1)
-                
-                # Apply SMOTE
-                X_resampled, y_resampled = smote.fit_resample(X_reshaped, labels)
-                
-                # Find new synthetic samples
-                original_count = len(embeddings)
-                synthetic_count = len(X_resampled) - original_count
-                
-                if synthetic_count > 0:
-                    print(f"Generated {synthetic_count} synthetic samples for {col}")
-                    
-                    # Create synthetic text examples (simplified - in practice you'd need to decode embeddings)
-                    for i in range(synthetic_count):
-                        # For now, we'll use the original text but mark as synthetic
-                        # In a full implementation, you'd decode the embedding back to text
-                        synthetic_row = df.iloc[i % len(df)].copy()
-                        synthetic_row['incident_summary'] = f"[SYNTHETIC] {synthetic_row['incident_summary']}"
-                        synthetic_row[col] = 1  # Set the target label
-                        synthetic_row['is_synthetic'] = 1
-                        synthetic_row['synthetic_source'] = 'smote'
-                        augmented_data.append(synthetic_row)
-                
-            except Exception as e:
-                print(f"SMOTE failed for {col}: {e}")
+            pos_df = df[df[col] == 1]
+            cur = len(pos_df)
+            needed = max(min_samples - cur, 0)
+            cap_by_ratio = int(cur * max_synth_to_real_ratio)
+            to_add = min(needed, max_new_per_label, cap_by_ratio)
+            if to_add <= 0:
                 continue
+            
+            # Prefer single-label positives
+            if prefer_single_label:
+                single_label_pos = pos_df[pos_df[label_columns].sum(axis=1) == 1]
+                pool = single_label_pos if len(single_label_pos) > 0 else pos_df
+            else:
+                pool = pos_df
+            
+            # Reproducible randomization
+            seeds_df = pool.sample(frac=1.0, random_state=seed)
+            
+            print(f"T5 paraphrase augment '{col}': {cur} -> target {min_samples} (adding up to {to_add})")
+            added_for_label = 0
+            
+            for _, row in seeds_df.iterrows():
+                if added_for_label >= to_add:
+                    break
+                text = str(row["incident_summary"]) if pd.notna(row["incident_summary"]) else ""
+                if not text:
+                    continue
+                candidates = self.paraphrase(
+                    text,
+                    num_return_sequences=max(1, per_seed),
+                    temperature=temperature,
+                    top_p=top_p,
+                    max_new_tokens=max_new_tokens,
+                )
+                # Similarity filter
+                filtered_candidates = candidates
+                if self.embedder_available and self._embedder is not None and len(candidates) > 0:
+                    try:
+                        seed_vec = self._embedder.encode([text], convert_to_numpy=True)
+                        cand_vecs = self._embedder.encode(candidates, convert_to_numpy=True)
+                        sims = self._cosine_sim_matrix(seed_vec, cand_vecs)[0]
+                        filtered_candidates = [c for c, s in zip(candidates, sims) if (min_similarity <= float(s) <= max_similarity)]
+                    except Exception as e:
+                        print(f"Similarity filtering failed: {e}")
+                        # fall back to unfiltered candidates
+                for cand in candidates:
+                    if added_for_label >= to_add:
+                        break
+                    # if similarity filter applied, skip those rejected
+                    if self.embedder_available and self._embedder is not None and len(filtered_candidates) > 0 and cand not in filtered_candidates:
+                        continue
+                    if dedup and cand in existing_texts:
+                        continue
+                    new_row = row.copy()
+                    new_row["incident_summary"] = cand
+                    new_row["is_synthetic"] = 1
+                    new_row["synthetic_source"] = "t5"
+                    augmented_rows.append(new_row)
+                    added_for_label += 1
+                    if dedup:
+                        existing_texts.add(cand)
+            if added_for_label > 0:
+                print(f"Added {added_for_label} T5-paraphrased rows for label '{col}'")
         
-        # Combine original and augmented data
-        if augmented_data:
-            augmented_df = pd.DataFrame(augmented_data)
+        if augmented_rows:
+            augmented_df = pd.DataFrame(augmented_rows)
             return pd.concat([df, augmented_df], ignore_index=True)
-        
         return df
+
+# (Removed SMOTE implementation)
 
 class ErrorAnalysisRefinement:
     """
@@ -782,7 +864,7 @@ def apply_imbalance_strategies(
         Modified DataFrame with applied strategies
     """
     if strategies is None:
-        strategies = ['focal_loss', 'back_translation', 'smote']
+        strategies = ['focal_loss', 'back_translation']
     
     modified_df = df.copy()
     
@@ -815,15 +897,18 @@ def apply_imbalance_strategies(
                 max_synth_to_real_ratio=max_synth_to_real_ratio
             )
 
-    if 'smote' in strategies:
-        print("Applying SMOTE to embeddings...")
-        smote_processor = EmbeddingSMOTE(
-            model_name=embedding_model_name or "bert-base-cased",
-            max_len=embedding_max_len,
-            batch_size=embedding_batch_size,
-            device=embedding_device
+    if 't5_paraphrase' in strategies:
+        print("Applying T5 paraphrase augmentation...")
+        t5 = T5ParaphraseAugmentation()
+        modified_df = t5.augment_rare_classes(
+            modified_df,
+            label_columns,
+            min_samples=min_samples_per_class,
+            max_new_per_label=max_new_per_label,
+            max_synth_to_real_ratio=max_synth_to_real_ratio
         )
-        modified_df = smote_processor.apply_smote(modified_df, label_columns)
+
+    # SMOTE path removed
     
     return modified_df
 
@@ -895,7 +980,7 @@ if __name__ == "__main__":
     print("1. FocalLoss - Direct loss function replacement")
     print("2. MultiTaskModel - Shared encoder architecture")
     print("3. BackTranslationAugmentation - Data augmentation")
-    print("4. EmbeddingSMOTE - SMOTE on embeddings")
+    print("4. T5ParaphraseAugmentation - Paraphrase augmentation")
     print("5. ErrorAnalysisRefinement - Label refinement")
     print("6. HierarchicalLabels - Label hierarchy")
-    print("7. LLMSyntheticGeneration - LLM-based generation") 
+    print("7. LLMSyntheticGeneration - LLM-based generation")
