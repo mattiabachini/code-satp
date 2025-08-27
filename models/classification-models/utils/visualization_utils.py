@@ -174,7 +174,8 @@ def heatmap_label_f1_by_strategy(
     cmap="cividis"
 ):
     """
-    Plot a heatmap with strategies on x-axis and labels on y-axis using per-label F1.
+    Plot a heatmap with strategies on y-axis and labels on x-axis using per-label F1,
+    matching the orientation and sorting style of the individual-label heatmap.
 
     Parameters:
     - df: long-form DataFrame with columns [strategy, label, f1]
@@ -184,14 +185,27 @@ def heatmap_label_f1_by_strategy(
     - title: plot title
     - note: optional subtitle/note
     """
-    pivot = df.pivot(index=label_col, columns=strategy_col, values=value_col)
+    # Pivot so rows=strategies, columns=labels
+    pivot = df.pivot(index=strategy_col, columns=label_col, values=value_col)
+
+    # Sort columns (labels) by their average F1 across strategies (descending)
+    col_order = pivot.mean(axis=0).sort_values(ascending=False).index
+    pivot = pivot[col_order]
+
+    # Sort rows (strategies) by their average F1 across labels (descending)
+    row_order = pivot.mean(axis=1).sort_values(ascending=False).index
+    pivot = pivot.loc[row_order]
+
+    # Plot
     plt.figure(figsize=figsize)
-    ax = sns.heatmap(pivot, annot=True, fmt=".2f", cmap=cmap, cbar_kws={"label": "F1 Score"})
-    ax.set_xlabel("Strategy")
-    ax.set_ylabel("Label")
-    ax.set_title(title)
+    ax = sns.heatmap(pivot, annot=True, fmt=".2f", cmap=cmap, linewidths=0.5, linecolor="gray", cbar_kws={"label": "F1 Score"})
+    ax.set_xlabel("Label")
+    ax.set_ylabel("Strategy")
+    ax.set_title(title, pad=20)
     if note:
         plt.figtext(0.5, -0.08, note, ha="center", fontsize=10)
+    ax.xaxis.tick_bottom()
+    ax.xaxis.set_label_position('bottom')
     plt.xticks(rotation=45, ha="right")
     plt.yticks(rotation=0)
     plt.tight_layout()
