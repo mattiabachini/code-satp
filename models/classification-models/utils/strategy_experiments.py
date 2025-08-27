@@ -178,6 +178,7 @@ def run_strategy_experiments(
             "threshold_tuned",
             "weighted_sampler",  # placeholder uses class_weights trainer for now
             "augmentation_bt",
+            # "augmentation_t5",  # enable explicitly when needed
         ]
 
     results = []
@@ -322,7 +323,24 @@ def run_strategy_experiments(
                 print(f"[Strategy] augmentation_bt: ❌ failed — {e}")
                 per_strategy_reports["augmentation_bt"] = None
 
-    # SMOTE augmentation path removed
+    # Augmentation via T5 paraphrase (uses the enhanced module if available)
+    if "augmentation_t5" in strategies:
+        train_with_aug = _load_augmented_trainer_fn()
+        if train_with_aug is None:
+            print("\n[Strategy] augmentation_t5: ⚠️ augmentation trainer not available; skipping")
+        else:
+            try:
+                print("\n[Strategy] augmentation_t5: starting...")
+                _, aug_metrics, _ = train_with_aug(
+                    model_name, df_train, df_val, df_test,
+                    max_len=max_len, batch_size=batch_size, epochs=epochs,
+                    augmentation_strategies=['t5_paraphrase']
+                )
+                per_strategy_reports["augmentation_t5"] = aug_metrics
+                print("[Strategy] augmentation_t5: ✅ completed")
+            except Exception as e:
+                print(f"[Strategy] augmentation_t5: ❌ failed — {e}")
+                per_strategy_reports["augmentation_t5"] = None
 
     # Build long-form results for plotting strategy heatmap
     rows = []
@@ -340,7 +358,9 @@ def run_strategy_experiments(
             rows.append({"strategy": strat_name, "label": lbl, "f1": f1})
     results_df = pd.DataFrame(rows)
 
-    # Pivot is often handy to save directly
+    # Pivot is often handy to save directly; guard for empty results
+    if results_df.empty:
+        return pd.DataFrame(), results_df
     pivot = results_df.pivot(index="label", columns="strategy", values="f1")
     return pivot, results_df
 
