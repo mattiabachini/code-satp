@@ -621,14 +621,14 @@ def run_strategy_experiments(
             val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
             test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
 
-            # Get validation probabilities from the trained model
-            val_out = trained_trainer.predict(val_ds)
+            # Get validation probabilities from the trained model (silence prints)
+            val_out = _predict_silent(trained_trainer, val_ds)
             val_probs = 1/(1+np.exp(-val_out.predictions))
             val_true = val_out.label_ids.astype(int)
             # Use independent per-label F1 tuning
             th = choose_thresholds_per_label(val_probs, val_true)
-            # Apply thresholds to test predictions from the trained model
-            test_out = trained_trainer.predict(test_ds)
+            # Apply thresholds to test predictions from the trained model (silence prints)
+            test_out = _predict_silent(trained_trainer, test_ds)
             test_probs = 1/(1+np.exp(-test_out.predictions))
             test_true = test_out.label_ids.astype(int)
             test_pred = apply_thresholds(test_probs, th)
