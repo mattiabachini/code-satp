@@ -59,6 +59,19 @@ def _predict_silent(trainer, dataset):
     finally:
         trainer.compute_metrics = original_cm
 
+
+def _print_pre_tuning_test_report(test_out, label_cols, header="Pre-tuning test (threshold=0.5)"):
+    """
+    Print a classification report on the test set using the default 0.5 threshold
+    before any threshold tuning is applied.
+    """
+    from sklearn.metrics import classification_report
+    test_true = test_out.label_ids.astype(int)
+    test_probs = 1 / (1 + np.exp(-test_out.predictions))
+    test_pred_05 = (test_probs >= 0.5).astype(int)
+    print(f"\n=== Classification Report Context: {header} ===")
+    print(classification_report(test_true, test_pred_05, target_names=label_cols, zero_division=0))
+
 def choose_thresholds_micro(val_probs, val_true, grid=np.linspace(0.05, 0.95, 19), max_iters=3):
     n_labels = val_true.shape[1]
     thresholds = np.full(n_labels, 0.5, dtype=float)
@@ -171,6 +184,9 @@ def tuned_metrics_from_trainer(trainer, tokenizer, df_val, df_test, label_cols, 
 
     val_out = _predict_silent(trainer, val_ds)
     test_out = _predict_silent(trainer, test_ds)
+
+    # Print pre-tuning test report @0.5 before selecting thresholds
+    _print_pre_tuning_test_report(test_out, label_cols, header="Pre-tuning test (threshold=0.5)")
     val_probs = 1 / (1 + np.exp(-val_out.predictions))
     test_probs = 1 / (1 + np.exp(-test_out.predictions))
 
@@ -499,6 +515,8 @@ def run_strategy_experiments(
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             val_out = _predict_silent(trainer, val_ds)
             test_out = _predict_silent(trainer, test_ds)
+            # Print pre-tuning test report @0.5
+            _print_pre_tuning_test_report(test_out, label_cols, header="Pre-tuning test (threshold=0.5)")
             val_probs = 1/(1+np.exp(-val_out.predictions))
             test_probs = 1/(1+np.exp(-test_out.predictions))
             th = choose_thresholds_per_label(val_probs, val_out.label_ids.astype(int))
@@ -621,14 +639,18 @@ def run_strategy_experiments(
             val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
             test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
 
-            # Get validation probabilities from the trained model (silence prints)
+            # Get validation/test predictions from the trained model (silence prints)
             val_out = _predict_silent(trained_trainer, val_ds)
+            test_out = _predict_silent(trained_trainer, test_ds)
+
+            # Print pre-tuning test report @0.5
+            _print_pre_tuning_test_report(test_out, label_cols, header="Pre-tuning test (threshold=0.5)")
+
             val_probs = 1/(1+np.exp(-val_out.predictions))
             val_true = val_out.label_ids.astype(int)
             # Use independent per-label F1 tuning
             th = choose_thresholds_per_label(val_probs, val_true)
             # Apply thresholds to test predictions from the trained model (silence prints)
-            test_out = _predict_silent(trained_trainer, test_ds)
             test_probs = 1/(1+np.exp(-test_out.predictions))
             test_true = test_out.label_ids.astype(int)
             test_pred = apply_thresholds(test_probs, th)
