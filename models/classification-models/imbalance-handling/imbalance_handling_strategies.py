@@ -14,6 +14,7 @@ Strategies included:
 """
 
 import torch
+import random
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
@@ -150,7 +151,7 @@ class BackTranslationAugmentation:
                 print("🔧 Install with: !pip install deep-translator")
                 self.available = False
     
-    def augment_text(self, text, num_augmentations=1):
+    def augment_text(self, text, num_augmentations=1, seed=None):
         """
         Augment a single text using back-translation.
         
@@ -163,6 +164,9 @@ class BackTranslationAugmentation:
         
         augmented_texts = []
         
+        if seed is not None:
+            # Local seeding for reproducible language selection/order
+            np.random.seed(seed)
         for _ in range(num_augmentations):
             try:
                 # Choose random target language
@@ -209,6 +213,13 @@ class BackTranslationAugmentation:
         
         augmented_data = []
         
+        # Reproducibility seeds for selection and any torch ops used hereafter
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+
         for col in label_columns:
             class_counts = df[col].value_counts()
             rare_classes = class_counts[class_counts < min_samples].index
@@ -244,7 +255,7 @@ class BackTranslationAugmentation:
                     if added_for_label >= to_add:
                         break
                     
-                    augmented_texts = self.augment_text(row['incident_summary'], num_augmentations=1)
+                    augmented_texts = self.augment_text(row['incident_summary'], num_augmentations=1, seed=seed)
                     
                     for aug_text in augmented_texts:
                         if added_for_label >= to_add:
@@ -301,7 +312,7 @@ class T5ParaphraseAugmentation:
             print(f"⚠️ T5 paraphraser unavailable: {e}")
             self.available = False
     
-    def paraphrase(self, text, num_return_sequences=2, temperature=0.7, top_p=0.9, max_new_tokens=64):
+    def paraphrase(self, text, num_return_sequences=2, temperature=0.7, top_p=0.9, max_new_tokens=64, seed=None):
         """
         Generate paraphrases for a single text.
         """
@@ -316,6 +327,9 @@ class T5ParaphraseAugmentation:
             f"Text: {text}\n\nParaphrase:"
         )
         try:
+            gen_kwargs = {}
+            if seed is not None:
+                gen_kwargs["seed"] = seed
             outputs = self._pipeline(
                 prompt,
                 do_sample=True,
@@ -323,6 +337,7 @@ class T5ParaphraseAugmentation:
                 top_p=top_p,
                 num_return_sequences=num_return_sequences,
                 max_new_tokens=max_new_tokens,
+                **gen_kwargs,
             )
             return [o.get("generated_text", "").strip() for o in outputs if o.get("generated_text")]
         except Exception as e:
@@ -380,6 +395,13 @@ class T5ParaphraseAugmentation:
         augmented_rows = []
         existing_texts = set(df["incident_summary"].astype(str).tolist()) if dedup else set()
         
+        # Seeding for deterministic sampling and generation
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+
         for col in label_columns:
             pos_df = df[df[col] == 1]
             cur = len(pos_df)
@@ -414,6 +436,7 @@ class T5ParaphraseAugmentation:
                     temperature=temperature,
                     top_p=top_p,
                     max_new_tokens=max_new_tokens,
+                    seed=seed,
                 )
                 # Similarity filter
                 filtered_candidates = candidates

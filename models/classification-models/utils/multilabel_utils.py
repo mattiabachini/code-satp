@@ -145,7 +145,7 @@ class MultiLabelDataset(Dataset):
 
 ## Metrics function
 
-def compute_metrics(eval_pred, target_names, exclusive_label=None):
+def compute_metrics(eval_pred, target_names, exclusive_label=None, context_label=None):
     """
     Compute evaluation metrics for multi-label classification.
     Includes Hamming Loss, Subset Accuracy, and Classification Report for all labels.
@@ -181,8 +181,12 @@ def compute_metrics(eval_pred, target_names, exclusive_label=None):
         zero_division=0, output_dict=True
     )
 
-    # Print complete report for reference
-    print("\nFull Classification Report:")
+    # Print complete report for reference with context
+    if context_label:
+        print(f"\n=== Classification Report Context: {context_label} ===")
+    else:
+        print("\n=== Classification Report Context: (unspecified) ===")
+    print("Full Classification Report:")
     print(classification_report(labels, predictions, target_names=target_names, zero_division=0))
 
 
@@ -280,13 +284,24 @@ def train_transformer_model(
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
-        compute_metrics=lambda eval_pred: compute_metrics(eval_pred, target_names, exclusive_label=exclusive_label)
+        compute_metrics=lambda eval_pred: compute_metrics(
+            eval_pred,
+            target_names,
+            exclusive_label=exclusive_label,
+            context_label="Validation (tuning)"
+        )
     )
 
     # Train the model
     trainer.train()
 
-    # Final evaluation on df_test: use predict() once to both compute metrics and collect logits
+    # Final evaluation on df_test: retag compute_metrics with test context and predict() once
+    trainer.compute_metrics = lambda eval_pred: compute_metrics(
+        eval_pred,
+        target_names,
+        exclusive_label=exclusive_label,
+        context_label="Final test evaluation"
+    )
     predictions_output = trainer.predict(test_dataset)
     test_results = predictions_output.metrics
     logits = predictions_output.predictions

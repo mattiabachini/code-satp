@@ -1,7 +1,9 @@
 import numpy as np
+import random
 import pandas as pd
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments
+from torch.utils.data import DataLoader, WeightedRandomSampler
 
 # Reuse core utilities
 from .multilabel_utils import MultiLabelDataset, compute_metrics, train_transformer_model
@@ -44,6 +46,18 @@ def _load_augmented_trainer_fn():
     except Exception:
         return None
 
+
+def _predict_silent(trainer, dataset):
+    """
+    Run Trainer.predict without triggering compute_metrics prints.
+    Restores the original compute_metrics afterwards.
+    """
+    original_cm = getattr(trainer, "compute_metrics", None)
+    try:
+        trainer.compute_metrics = None
+        return trainer.predict(dataset)
+    finally:
+        trainer.compute_metrics = original_cm
 
 def choose_thresholds_micro(val_probs, val_true, grid=np.linspace(0.05, 0.95, 19), max_iters=3):
     n_labels = val_true.shape[1]
@@ -124,6 +138,27 @@ def choose_thresholds(val_probs, val_true, objective="macro", grid=np.linspace(0
     return th
 
 
+def choose_thresholds_per_label(val_probs, val_true, grid=np.linspace(0.0, 1.0, 101), beta=1.0):
+    """
+    Select a threshold per label independently by maximizing F-beta on the
+    validation set. Defaults to F1 (beta=1.0).
+    Returns an array of thresholds, one per label.
+    """
+    from sklearn.metrics import fbeta_score
+
+    n_labels = val_true.shape[1]
+    th = np.full(n_labels, 0.5, dtype=float)
+    for j in range(n_labels):
+        y = val_true[:, j]
+        p = val_probs[:, j]
+        best_t, best_s = 0.5, -1.0
+        for t in grid:
+            s = fbeta_score(y, (p >= t).astype(int), beta=beta, zero_division=0)
+            if s > best_s:
+                best_s, best_t = s, t
+        th[j] = best_t
+    return th
+
 def tuned_metrics_from_trainer(trainer, tokenizer, df_val, df_test, label_cols, max_len=512, objective="macro"):
     """
     Compute test metrics after tuning per-label thresholds on validation set.
@@ -134,15 +169,18 @@ def tuned_metrics_from_trainer(trainer, tokenizer, df_val, df_test, label_cols, 
     val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
     test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
 
-    val_out = trainer.predict(val_ds)
-    test_out = trainer.predict(test_ds)
+    val_out = _predict_silent(trainer, val_ds)
+    test_out = _predict_silent(trainer, test_ds)
     val_probs = 1 / (1 + np.exp(-val_out.predictions))
     test_probs = 1 / (1 + np.exp(-test_out.predictions))
 
-    th = choose_thresholds(val_probs, val_out.label_ids.astype(int), objective=objective)
+    th = choose_thresholds_per_label(val_probs, val_out.label_ids.astype(int))
     test_true = test_out.label_ids.astype(int)
     test_pred = _apply_thresholds(test_probs, th)
 
+    # Print a single labeled report for tuned final test
+    print("\n=== Classification Report Context: Threshold tuned final test ===")
+    print(classification_report(test_true, test_pred, target_names=label_cols, zero_division=0))
     report = classification_report(test_true, test_pred, target_names=label_cols, zero_division=0, output_dict=True)
     micro_f1 = f1_score(test_true, test_pred, average="micro", zero_division=0)
     metrics = {
@@ -154,6 +192,133 @@ def tuned_metrics_from_trainer(trainer, tokenizer, df_val, df_test, label_cols, 
     return metrics
 
 
+# -----------------------------------------------------------------------------
+# Weighted sampler helpers (class-aware sampling)
+# -----------------------------------------------------------------------------
+
+def _label_inverse_frequency_sample_weights(df, label_cols):
+    """
+    Compute per-sample weights that emphasize rare labels using inverse label frequency.
+
+    For each label j: w_label[j] = 1 / max(P_j, 1)
+    For each sample i:  w_i = sum_j y_ij * w_label[j]
+
+    We then normalize weights to have mean 1.0 and ensure strictly positive values.
+    """
+    labels_matrix = df[label_cols].values.astype(float)
+    # Count positives per label; guard against zeros
+    positives_per_label = labels_matrix.sum(axis=0)
+    inv_freq_per_label = 1.0 / np.maximum(positives_per_label, 1.0)
+    # Sample weights as sum of inverse frequencies for positive labels in the row
+    sample_weights = labels_matrix @ inv_freq_per_label
+    sample_weights = sample_weights.astype(float)
+    # Ensure strictly positive weights
+    if np.any(sample_weights <= 0):
+        min_positive = np.min(sample_weights[sample_weights > 0]) if np.any(sample_weights > 0) else 1.0
+        sample_weights = np.where(sample_weights <= 0, min_positive, sample_weights)
+    # Normalize to mean 1 for stability
+    mean_w = sample_weights.mean() if sample_weights.mean() > 0 else 1.0
+    sample_weights = sample_weights / mean_w
+    return sample_weights
+
+
+class WeightedSamplerTrainer(Trainer):
+    """
+    Trainer that injects a WeightedRandomSampler for the training dataloader.
+    """
+
+    def __init__(self, *args, sample_weights=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if sample_weights is None:
+            raise ValueError("sample_weights must be provided for WeightedSamplerTrainer")
+        # Store as double for WeightedRandomSampler numerical stability
+        self._sample_weights = torch.as_tensor(sample_weights, dtype=torch.double)
+
+    def get_train_dataloader(self):
+        if self.train_dataset is None:
+            return super().get_train_dataloader()
+        sampler = WeightedRandomSampler(
+            weights=self._sample_weights,
+            num_samples=len(self._sample_weights),
+            replacement=True,
+        )
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.args.train_batch_size,
+            sampler=sampler,
+            collate_fn=self.data_collator,
+        )
+
+
+def train_with_weighted_sampler(model_name, df_train, df_val, df_test, max_len=512, batch_size=16, epochs=2, seed=42):
+    # Reproducibility seeds for this training run
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    label_cols = [c for c in df_train.columns if c != "incident_summary"]
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_name, num_labels=len(label_cols), problem_type="multi_label_classification"
+    )
+
+    # Datasets
+    train_ds = MultiLabelDataset(df_train["incident_summary"].tolist(), df_train[label_cols].values, tokenizer, max_len)
+    val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
+    test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
+
+    # Arguments
+    args = TrainingArguments(
+        output_dir="./results",
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        learning_rate=2e-5,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        num_train_epochs=epochs,
+        weight_decay=0.01,
+        logging_dir="./logs",
+        logging_steps=10,
+        load_best_model_at_end=True,
+        metric_for_best_model='eval_micro_f1',
+        greater_is_better=True,
+        save_total_limit=2,
+        report_to="none",
+        seed=seed,
+        data_seed=seed,
+    )
+
+    # Compute class-aware per-sample weights from df_train
+    sample_weights = _label_inverse_frequency_sample_weights(df_train, label_cols)
+
+    trainer = WeightedSamplerTrainer(
+        model=model,
+        args=args,
+        train_dataset=train_ds,
+        eval_dataset=val_ds,
+        compute_metrics=lambda x: compute_metrics(x, label_cols, context_label="Validation (tuning)"),
+        sample_weights=sample_weights,
+    )
+    trainer.train()
+
+    # Evaluate on test
+    predictions_output = _predict_silent(trainer, test_ds)
+    logits = predictions_output.predictions
+    labels = predictions_output.label_ids
+    probs = torch.sigmoid(torch.tensor(logits)).numpy()
+    bin_preds = (probs > 0.5).astype(int)
+
+    pred_df = pd.DataFrame()
+    for i, col in enumerate(label_cols):
+        pred_df[f"true_{col}"] = labels[:, i]
+        pred_df[f"pred_{col}"] = bin_preds[:, i]
+        pred_df[f"prob_{col}"] = probs[:, i]
+    pred_df["incident_summary"] = df_test["incident_summary"].values
+
+    test_results = predictions_output.metrics
+    return trainer, test_results, pred_df
+
 def _pos_weight_from_df(df, label_cols):
     P = df[label_cols].sum(axis=0).values.astype(np.float32)
     N = len(df) - P
@@ -161,7 +326,13 @@ def _pos_weight_from_df(df, label_cols):
     return torch.tensor((N / P), dtype=torch.float)
 
 
-def train_with_class_weights(model_name, df_train, df_val, df_test, max_len=512, batch_size=16, epochs=2):
+def train_with_class_weights(model_name, df_train, df_val, df_test, max_len=512, batch_size=16, epochs=2, seed=42):
+    # Reproducibility seeds for this training run
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     label_cols = [c for c in df_train.columns if c != "incident_summary"]
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSequenceClassification.from_pretrained(
@@ -189,6 +360,8 @@ def train_with_class_weights(model_name, df_train, df_val, df_test, max_len=512,
         greater_is_better=True,
         save_total_limit=2,
         report_to="none",
+        seed=seed,
+        data_seed=seed,
     )
 
     class WeightedBCETrainer(Trainer):
@@ -210,12 +383,12 @@ def train_with_class_weights(model_name, df_train, df_val, df_test, max_len=512,
         args=args,
         train_dataset=train_ds,
         eval_dataset=val_ds,
-        compute_metrics=lambda x: compute_metrics(x, label_cols)
+        compute_metrics=lambda x: compute_metrics(x, label_cols, context_label="Validation (tuning)")
     )
     trainer.train()
 
     # Evaluate on test: use predict() once to gather both metrics and logits
-    predictions_output = trainer.predict(test_ds)
+    predictions_output = _predict_silent(trainer, test_ds)
     logits = predictions_output.predictions
     labels = predictions_output.label_ids
     probs = torch.sigmoid(torch.tensor(logits)).numpy()
@@ -245,8 +418,15 @@ def run_strategy_experiments(
     batch_size=16,
     epochs=2,
     results_csv=None,
-    predictions_csv=None
+    predictions_csv=None,
+    seed=42
 ):
+    # Global seeds for a consistent experiment run
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     if strategies is None:
         strategies = [
             "baseline",
@@ -266,7 +446,7 @@ def run_strategy_experiments(
         try:
             print("\n[Strategy] baseline: starting...")
             trainer, base_metrics, base_pred_df = train_transformer_model(
-                model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs
+                model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs, seed=seed
             )
             per_strategy_reports["baseline"] = base_metrics
             # attach strategy label and retain probabilities for downstream PR/AUPRC
@@ -296,7 +476,7 @@ def run_strategy_experiments(
                 learning_rate=2e-5, per_device_train_batch_size=batch_size, per_device_eval_batch_size=batch_size,
                 num_train_epochs=epochs, weight_decay=0.01, logging_dir="./logs", logging_steps=10,
                 load_best_model_at_end=True, metric_for_best_model='eval_micro_f1', greater_is_better=True,
-                save_total_limit=2, report_to="none",
+                save_total_limit=2, report_to="none", seed=seed, data_seed=seed,
             )
 
             focal = FocalLoss(alpha=1.0, gamma=2.0)
@@ -311,21 +491,23 @@ def run_strategy_experiments(
 
             trainer = FocalTrainer(
                 model=model, args=args, train_dataset=train_ds, eval_dataset=val_ds,
-                compute_metrics=lambda x: compute_metrics(x, label_cols)
+                compute_metrics=lambda x: compute_metrics(x, label_cols, context_label="Validation (tuning)")
             )
             trainer.train()
 
             # Per-label macro-F1 tuned variant only
             tokenizer = AutoTokenizer.from_pretrained(model_name)
-            val_out = trainer.predict(val_ds)
-            test_out = trainer.predict(test_ds)
+            val_out = _predict_silent(trainer, val_ds)
+            test_out = _predict_silent(trainer, test_ds)
             val_probs = 1/(1+np.exp(-val_out.predictions))
             test_probs = 1/(1+np.exp(-test_out.predictions))
-            th = choose_thresholds(val_probs, val_out.label_ids.astype(int), objective="macro")
+            th = choose_thresholds_per_label(val_probs, val_out.label_ids.astype(int))
             test_true = test_out.label_ids.astype(int)
             test_pred = apply_thresholds(test_probs, th)
 
             from sklearn.metrics import classification_report, f1_score, hamming_loss, accuracy_score
+            print("\n=== Classification Report Context: Threshold tuned final test ===")
+            print(classification_report(test_true, test_pred, target_names=label_cols, zero_division=0))
             report = classification_report(test_true, test_pred, target_names=label_cols, zero_division=0, output_dict=True)
             micro_f1 = f1_score(test_true, test_pred, average="micro", zero_division=0)
             metrics = {
@@ -355,10 +537,11 @@ def run_strategy_experiments(
         try:
             print("\n[Strategy] class_weights: starting...")
             trainer, cw_metrics, cw_pred_df = train_with_class_weights(
-                model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs
+                model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs, seed=seed
             )
             # Tuned variant — reuse tokenizer; compute predictions through trainer.predict
             tokenizer = AutoTokenizer.from_pretrained(model_name)
+            # Silence prints during tuning and evaluation by using _predict_silent inside tuned_metrics
             cw_tuned = tuned_metrics_from_trainer(
                 trainer, tokenizer, df_val, df_test, label_cols, max_len=max_len, objective="macro"
             )
@@ -367,11 +550,11 @@ def run_strategy_experiments(
             # Recompute test probs via trainer.predict for consistency
             val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
             test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
-            val_out = trainer.predict(val_ds)
-            test_out = trainer.predict(test_ds)
+            val_out = _predict_silent(trainer, val_ds)
+            test_out = _predict_silent(trainer, test_ds)
             val_probs = 1/(1+np.exp(-val_out.predictions))
             test_probs = 1/(1+np.exp(-test_out.predictions))
-            th = choose_thresholds(val_probs, val_out.label_ids.astype(int), objective="macro")
+            th = choose_thresholds_per_label(val_probs, val_out.label_ids.astype(int))
             test_true = test_out.label_ids.astype(int)
             test_pred = apply_thresholds(test_probs, th)
             cw_tuned_df = pd.DataFrame()
@@ -387,6 +570,42 @@ def run_strategy_experiments(
             per_strategy_reports["class_weights"] = None
             print(f"[Strategy] class_weights: ❌ failed — {e}")
 
+    # Weighted sampler (report tuned only)
+    if "weighted_sampler" in strategies:
+        try:
+            print("\n[Strategy] weighted_sampler: starting...")
+            trainer, ws_metrics, ws_pred_df = train_with_weighted_sampler(
+                model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs, seed=seed
+            )
+            # Tuned variant — reuse tokenizer and compute predictions via trainer.predict
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            ws_tuned = tuned_metrics_from_trainer(
+                trainer, tokenizer, df_val, df_test, label_cols, max_len=max_len, objective="macro"
+            )
+            per_strategy_reports["weighted_sampler_tuned"] = ws_tuned
+            # Save tuned predictions
+            val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
+            test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
+            val_out = _predict_silent(trainer, val_ds)
+            test_out = _predict_silent(trainer, test_ds)
+            val_probs = 1/(1+np.exp(-val_out.predictions))
+            test_probs = 1/(1+np.exp(-test_out.predictions))
+            th = choose_thresholds_per_label(val_probs, val_out.label_ids.astype(int))
+            test_true = test_out.label_ids.astype(int)
+            test_pred = apply_thresholds(test_probs, th)
+            ws_tuned_df = pd.DataFrame()
+            for i, col in enumerate(label_cols):
+                ws_tuned_df[f"true_{col}"] = test_true[:, i]
+                ws_tuned_df[f"pred_{col}"] = test_pred[:, i]
+                ws_tuned_df[f"prob_{col}"] = test_probs[:, i]
+            ws_tuned_df["incident_summary"] = df_test["incident_summary"].values
+            ws_tuned_df["strategy"] = "weighted_sampler_tuned"
+            all_predictions.append(ws_tuned_df)
+            print("[Strategy] weighted_sampler: ✅ completed")
+        except Exception as e:
+            per_strategy_reports["weighted_sampler_tuned"] = None
+            print(f"[Strategy] weighted_sampler: ❌ failed — {e}")
+
     # Threshold-tuned (optimize micro-F1 on val, apply to test, then recompute per-label report)
     if "threshold_tuned" in strategies:
         try:
@@ -394,7 +613,7 @@ def run_strategy_experiments(
             # Always obtain a trained model to generate calibrated probabilities
             # Train a clean baseline model here and reuse it for threshold selection
             trained_trainer, _, _ = train_transformer_model(
-                model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs
+                model_name, df_train, df_val, df_test, max_len=max_len, batch_size=batch_size, epochs=epochs, seed=seed
             )
 
             # Build datasets for prediction (aligned with max_len/tokenization)
@@ -406,8 +625,8 @@ def run_strategy_experiments(
             val_out = trained_trainer.predict(val_ds)
             val_probs = 1/(1+np.exp(-val_out.predictions))
             val_true = val_out.label_ids.astype(int)
-            # Use per-label macro-F1 tuning as requested
-            th = choose_thresholds(val_probs, val_true, objective="macro")
+            # Use independent per-label F1 tuning
+            th = choose_thresholds_per_label(val_probs, val_true)
             # Apply thresholds to test predictions from the trained model
             test_out = trained_trainer.predict(test_ds)
             test_probs = 1/(1+np.exp(-test_out.predictions))
@@ -441,10 +660,7 @@ def run_strategy_experiments(
             per_strategy_reports["threshold_tuned"] = None
             print(f"[Strategy] threshold_tuned: ❌ failed — {e}")
 
-    # Weighted sampler placeholder: mirror class_weights_tuned
-    if "weighted_sampler" in strategies and "weighted_sampler" not in per_strategy_reports:
-        per_strategy_reports["weighted_sampler_tuned"] = per_strategy_reports.get("class_weights_tuned")
-        print("\n[Strategy] weighted_sampler_tuned: ✅ completed (alias of class_weights_tuned)")
+    # (weighted_sampler handled above)
 
     # Augmentation
     # Augmentation via back-translation (report tuned only)
@@ -469,11 +685,11 @@ def run_strategy_experiments(
                 # Save tuned predictions
                 val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
                 test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
-                val_out = trainer.predict(val_ds)
-                test_out = trainer.predict(test_ds)
+                val_out = _predict_silent(trainer, val_ds)
+                test_out = _predict_silent(trainer, test_ds)
                 val_probs = 1/(1+np.exp(-val_out.predictions))
                 test_probs = 1/(1+np.exp(-test_out.predictions))
-                th = choose_thresholds(val_probs, val_out.label_ids.astype(int), objective="macro")
+                th = choose_thresholds_per_label(val_probs, val_out.label_ids.astype(int))
                 test_true = test_out.label_ids.astype(int)
                 test_pred = apply_thresholds(test_probs, th)
                 aug_bt_tuned_df = pd.DataFrame()
@@ -510,11 +726,11 @@ def run_strategy_experiments(
                 # Save tuned predictions
                 val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
                 test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
-                val_out = trainer.predict(val_ds)
-                test_out = trainer.predict(test_ds)
+                val_out = _predict_silent(trainer, val_ds)
+                test_out = _predict_silent(trainer, test_ds)
                 val_probs = 1/(1+np.exp(-val_out.predictions))
                 test_probs = 1/(1+np.exp(-test_out.predictions))
-                th = choose_thresholds(val_probs, val_out.label_ids.astype(int), objective="macro")
+                th = choose_thresholds_per_label(val_probs, val_out.label_ids.astype(int))
                 test_true = test_out.label_ids.astype(int)
                 test_pred = apply_thresholds(test_probs, th)
                 aug_t5_tuned_df = pd.DataFrame()

@@ -10,6 +10,7 @@ Date: 2024
 """
 
 import torch
+import random
 import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
@@ -78,7 +79,8 @@ def train_transformer_model_with_focal_loss(
     batch_size=16, 
     epochs=2,
     focal_alpha=1,
-    focal_gamma=2
+    focal_gamma=2,
+    seed=42
 ):
     """
     Enhanced training function with Focal Loss integration.
@@ -87,6 +89,13 @@ def train_transformer_model_with_focal_loss(
     that adds Focal Loss to handle class imbalance.
     """
     
+    # Reproducibility seeds
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
     # Identify label columns (exclude metadata columns introduced by augmentation)
     target_names = [
         col for col in df_train.columns
@@ -139,6 +148,8 @@ def train_transformer_model_with_focal_loss(
         greater_is_better=True,
         save_total_limit=2,
         report_to="none",
+        seed=seed,
+        data_seed=seed,
     )
 
     # Set up Trainer
@@ -147,7 +158,11 @@ def train_transformer_model_with_focal_loss(
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
-        compute_metrics=lambda eval_pred: compute_metrics(eval_pred, target_names)
+        compute_metrics=lambda eval_pred: compute_metrics(
+            eval_pred,
+            target_names,
+            context_label="Validation (tuning)"
+        )
     )
 
     # Integrate Focal Loss
@@ -156,7 +171,12 @@ def train_transformer_model_with_focal_loss(
     # Train the model
     trainer.train()
 
-    # Final evaluation on test set: use predict() to avoid duplicate metric printing
+    # Final evaluation on test set: label context and use predict()
+    trainer.compute_metrics = lambda eval_pred: compute_metrics(
+        eval_pred,
+        target_names,
+        context_label="Final test evaluation"
+    )
     predictions_output = trainer.predict(test_dataset)
     test_results = predictions_output.metrics
     logits = predictions_output.predictions
@@ -193,7 +213,8 @@ def train_transformer_model_with_augmentation(
     embedding_model_name=None,
     embedding_max_len=512,
     embedding_batch_size=32,
-    embedding_device=None
+    embedding_device=None,
+    seed=42
 ):
     """
     Enhanced training function with data augmentation.
@@ -234,7 +255,8 @@ def train_transformer_model_with_augmentation(
         df_test, 
         max_len, 
         batch_size, 
-        epochs
+        epochs,
+        seed=seed
     )
 
 def train_multitask_model(
@@ -336,7 +358,8 @@ def train_with_error_analysis(
     df_test, 
     max_len=512, 
     batch_size=16, 
-    epochs=2
+    epochs=2,
+    seed=42
 ):
     """
     Enhanced training function that includes error analysis and label refinement suggestions.
@@ -344,7 +367,7 @@ def train_with_error_analysis(
     
     # Train the model first
     trainer, test_results, pred_df = train_transformer_model_with_focal_loss(
-        model_name, df_train, df_val, df_test, max_len, batch_size, epochs
+        model_name, df_train, df_val, df_test, max_len, batch_size, epochs, seed=seed
     )
     
     # Perform error analysis
@@ -475,7 +498,7 @@ def run_enhanced_experiments(
 # UTILITY FUNCTIONS
 # =============================================================================
 
-def compute_metrics(eval_pred, target_names):
+def compute_metrics(eval_pred, target_names, context_label=None):
     """
     Compute evaluation metrics for multi-label classification.
     """
@@ -504,7 +527,11 @@ def compute_metrics(eval_pred, target_names):
     print("Shape of labels:", labels.shape)
     print("First few rows of labels:\n", labels[:5])
     print("Final target names:", target_names)
-    print("\nFull Classification Report:")
+    if context_label:
+        print(f"\n=== Classification Report Context: {context_label} ===")
+    else:
+        print("\n=== Classification Report Context: (unspecified) ===")
+    print("Full Classification Report:")
     print(classification_report(labels, predictions, target_names=target_names, zero_division=0))
 
     # Summary Metrics for Trainer
