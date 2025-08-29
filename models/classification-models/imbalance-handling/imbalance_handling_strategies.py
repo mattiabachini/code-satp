@@ -1059,6 +1059,15 @@ class TemperatureScaling(nn.Module):
         # Single temperature parameter for all classes
         self.temperature = nn.Parameter(torch.ones(1) * 1.5)
     
+    def get_temperature(self):
+        """
+        Get the current temperature value with positive constraint applied.
+        
+        Returns:
+            float: Current temperature value (always positive)
+        """
+        return F.softplus(self.temperature).item() + 0.1
+    
     def forward(self, logits):
         """
         Apply temperature scaling to logits.
@@ -1069,7 +1078,9 @@ class TemperatureScaling(nn.Module):
         Returns:
             Calibrated logits (batch_size, num_classes)
         """
-        return logits / self.temperature
+        # Use softplus to ensure temperature is always positive
+        temp = F.softplus(self.temperature) + 0.1
+        return logits / temp
     
     def fit(self, logits, labels, max_iter=50, lr=0.01, verbose=False):
         """
@@ -1082,9 +1093,9 @@ class TemperatureScaling(nn.Module):
             lr: Learning rate for optimization
             verbose: Print optimization progress
         """
-        if not torch.is_tensor(logits):
+        if not torch.tensor(logits):
             logits = torch.tensor(logits, dtype=torch.float32)
-        if not torch.is_tensor(labels):
+        if not torch.tensor(labels):
             labels = torch.tensor(labels, dtype=torch.float32)
             
         # Move to same device as logits
@@ -1097,23 +1108,47 @@ class TemperatureScaling(nn.Module):
         
         def eval_loss():
             optimizer.zero_grad()
-            # Apply temperature scaling
-            scaled_logits = self.forward(logits)
+            # Apply temperature scaling with positive constraint
+            # Use softplus to ensure temperature is always positive
+            temp = F.softplus(self.temperature) + 0.1  # Minimum temperature of 0.1
+            scaled_logits = logits / temp
             # Multi-label binary cross-entropy loss
             loss = F.binary_cross_entropy_with_logits(scaled_logits, labels)
             loss.backward()
             return loss
         
         if verbose:
-            print(f"Initial temperature: {self.temperature.item():.4f}")
+            print(f"Initial temperature: {self.get_temperature():.4f}")
         
         # Optimize temperature
-        optimizer.step(eval_loss)
+        try:
+            optimizer.step(eval_loss)
+        except Exception as e:
+            print(f"Warning: Temperature optimization failed: {e}")
+            print("Using default temperature of 1.0")
+            final_temp = 1.0
+            if verbose:
+                print(f"Final temperature (fallback): {final_temp:.4f}")
+            return final_temp
+        
+        # Get final temperature with positive constraint
+        final_temp = self.get_temperature()
+        
+        # Validate temperature is in reasonable range
+        if final_temp > 10.0:
+            print(f"Warning: Temperature {final_temp:.4f} too high, clamping to 10.0")
+            final_temp = 10.0
+        
+        # Additional safety check for extreme values
+        if final_temp < 0.1:
+            print(f"Warning: Temperature {final_temp:.4f} too low, using minimum 0.1")
+            final_temp = 0.1
         
         if verbose:
-            print(f"Optimized temperature: {self.temperature.item():.4f}")
+            print(f"Optimized temperature: {final_temp:.4f}")
+            print(f"Raw temperature parameter: {self.temperature.item():.4f}")
         
-        return self.temperature.item()
+        return final_temp
     
     def calibrate_probs(self, logits):
         """
@@ -1125,12 +1160,14 @@ class TemperatureScaling(nn.Module):
         Returns:
             Calibrated probabilities
         """
-        if not torch.is_tensor(logits):
+        if not torch.tensor(logits):
             logits = torch.tensor(logits, dtype=torch.float32)
         
-        # Apply temperature scaling and sigmoid
+        # Apply temperature scaling and sigmoid with positive constraint
         with torch.no_grad():
-            calibrated_logits = self.forward(logits)
+            # Use softplus to ensure temperature is always positive
+            temp = F.softplus(self.temperature) + 0.1
+            calibrated_logits = logits / temp
             calibrated_probs = torch.sigmoid(calibrated_logits)
         
         return calibrated_probs.numpy() if isinstance(calibrated_probs, torch.Tensor) else calibrated_probs
