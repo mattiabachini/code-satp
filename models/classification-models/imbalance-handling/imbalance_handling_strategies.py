@@ -543,11 +543,13 @@ class T5ParaphraseAugmentation:
                     # Only add seed if the model's generation config supports it
                     if hasattr(generation_config, 'seed') or 'seed' in generation_config.__dict__:
                         gen_kwargs["seed"] = int(seed)
-                        print(f"Using seed parameter for reproducible generation")
+                        # Don't print this every time - it's already shown during model initialization
                     else:
-                        print(f"Model {self.model_name} doesn't support seed parameter, using torch seeding only")
+                        # Don't print this every time - it's already shown during model initialization
+                        pass
                 else:
-                    print(f"Could not determine seed support for {self.model_name}, using torch seeding only")
+                    # Don't print this every time - it's already shown during model initialization
+                    pass
             
             # Generate with the model - will use seed parameter if available
             outputs = self._pipeline(
