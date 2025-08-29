@@ -17,11 +17,15 @@ class FocalLoss(torch.nn.Module):
         self.reduction = reduction
 
     def forward(self, logits, targets):
+        # Ensure all tensors are on the same device
+        device = logits.device
+        alpha_pos = self.alpha_pos.to(device)
+        
         logp = torch.nn.functional.logsigmoid(logits)
         log1mp = torch.nn.functional.logsigmoid(-logits)
         logpt = torch.where(targets == 1, logp, log1mp)
         pt = torch.exp(logpt)
-        alpha_t = torch.where(targets == 1, self.alpha_pos, 1 - self.alpha_pos)
+        alpha_t = torch.where(targets == 1, alpha_pos, 1 - alpha_pos)
         loss = -(alpha_t * (1 - pt).pow(self.gamma) * logpt)
         if self.reduction == 'mean':
             return loss.mean()
@@ -34,7 +38,8 @@ def _compute_alpha_pos_from_df(df, label_cols, clamp_min=0.25, clamp_max=0.75):
     pi = y.mean(dim=0).clamp_(min=1e-6, max=1-1e-6)
     median_pi = pi.median()
     w = torch.sqrt(median_pi / pi)
-    return torch.clamp(w, min=float(clamp_min), max=float(clamp_max))
+    # Ensure the tensor is on CPU initially (will be moved to device when needed)
+    return torch.clamp(w, min=float(clamp_min), max=float(clamp_max)).cpu()
 
 # Dynamic import helper to access augmentation function in sibling folder with hyphen in its name
 def _load_augmented_trainer_fn():
@@ -608,6 +613,125 @@ def run_strategy_experiments(
 
     per_strategy_reports = {}
     all_predictions = []
+    
+    # Fallback function for basic threshold tuning
+    def _basic_threshold_tuning(trainer, test_ds, label_cols):
+        """Basic threshold tuning when calibration is not available."""
+        try:
+            # Get predictions
+            predictions_output = _predict_silent(trainer, test_ds)
+            logits = predictions_output.predictions
+            labels = predictions_output.label_ids
+            
+            # Ensure logits are on CPU for numpy conversion
+            if hasattr(logits, 'cpu'):
+                logits = logits.cpu()
+            logits_tensor = torch.tensor(logits)
+            probs = torch.sigmoid(logits_tensor).numpy()
+            
+            # Use basic threshold tuning
+            thresholds = choose_thresholds_micro(probs, labels)
+            bin_preds = (probs >= thresholds[None, :]).astype(int)
+            
+            # Create results DataFrame
+            pred_df = pd.DataFrame()
+            for i, col in enumerate(label_cols):
+                pred_df[f"true_{col}"] = labels[:, i]
+                pred_df[f"pred_{col}"] = bin_preds[:, i]
+                pred_df[f"prob_{col}"] = probs[:, i]
+            
+            # Compute metrics
+            from sklearn.metrics import f1_score
+            micro_f1 = f1_score(labels, bin_preds, average="micro", zero_division=0)
+            macro_f1 = f1_score(labels, bin_preds, average="macro", zero_division=0)
+            
+            metrics = {
+                "micro_f1": micro_f1,
+                "macro_f1": macro_f1,
+                "objective": "micro_f1"
+            }
+            
+            return {
+                "metrics": metrics,
+                "predictions": pred_df,
+                "temperature": 1.0,  # No temperature scaling
+                "thresholds": thresholds
+            }
+            
+        except Exception as e:
+            print(f"Basic threshold tuning failed: {e}")
+            raise e
+    
+    # Helper function to apply calibration + threshold tuning to any strategy
+    def apply_calibration_and_thresholds(trainer, strategy_name, verbose=True):
+        """Apply temperature scaling calibration + threshold tuning to any trained model."""
+        try:
+            # Build datasets for prediction
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
+            test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
+            
+            # Import calibration functions
+            try:
+                import sys
+                from pathlib import Path
+                # Try multiple import paths for flexibility
+                possible_paths = [
+                    str(Path(__file__).resolve().parent.parent / "imbalance-handling"),
+                    str(Path(__file__).resolve().parent.parent / "imbalance-handling" / "imbalance_handling_strategies.py"),
+                    "./imbalance-handling",
+                    "../imbalance-handling"
+                ]
+                
+                imported = False
+                for path in possible_paths:
+                    try:
+                        if path.endswith('.py'):
+                            # Direct import from file
+                            import importlib.util
+                            spec = importlib.util.spec_from_file_location("imbalance_handling_strategies", path)
+                            mod = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(mod)
+                            calibrate_and_tune_thresholds = getattr(mod, "calibrate_and_tune_thresholds")
+                            imported = True
+                            break
+                        else:
+                            # Add to path and import
+                            sys.path.insert(0, path)
+                            from imbalance_handling_strategies import calibrate_and_tune_thresholds
+                            imported = True
+                            break
+                    except Exception:
+                        continue
+                
+                if not imported:
+                    raise ImportError("Could not import calibration functions from any path")
+                    
+            except ImportError as e:
+                print(f"Warning: Could not import calibration functions: {e}")
+                print("Falling back to basic threshold tuning...")
+                # Fallback to basic threshold tuning
+                return _basic_threshold_tuning(trainer, test_ds, label_cols)
+            
+            if verbose:
+                print(f"Applying temperature scaling calibration + threshold tuning to {strategy_name}...")
+            
+            # Apply calibration + threshold tuning
+            calibration_results = calibrate_and_tune_thresholds(
+                trainer, 
+                val_ds, 
+                test_ds, 
+                label_cols, 
+                objective="micro",  # Use micro-F1 for threshold tuning
+                max_temp_iter=50, 
+                verbose=verbose
+            )
+            
+            return calibration_results
+            
+        except Exception as e:
+            print(f"Calibration failed for {strategy_name}: {e}")
+            raise e
 
     # Baseline
     if "baseline" in strategies:
@@ -630,14 +754,15 @@ def run_strategy_experiments(
     if "focal" in strategies:
         try:
             print("\n[Strategy] focal: starting...")
-            label_cols = [c for c in df_train.columns if c != "incident_summary"]
+            # Use the label_cols parameter instead of redefining it
+            focal_label_cols = label_cols
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             model = AutoModelForSequenceClassification.from_pretrained(
-                model_name, num_labels=len(label_cols), problem_type="multi_label_classification"
+                model_name, num_labels=len(focal_label_cols), problem_type="multi_label_classification"
             )
-            train_ds = MultiLabelDataset(df_train["incident_summary"].tolist(), df_train[label_cols].values, tokenizer, max_len)
-            val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
-            test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
+            train_ds = MultiLabelDataset(df_train["incident_summary"].tolist(), df_train[focal_label_cols].values, tokenizer, max_len)
+            val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[focal_label_cols].values, tokenizer, max_len)
+            test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[focal_label_cols].values, tokenizer, max_len)
 
             args = TrainingArguments(
                 output_dir="./results", eval_strategy="epoch", save_strategy="epoch",
@@ -647,26 +772,40 @@ def run_strategy_experiments(
                 save_total_limit=2, report_to="none", seed=seed, data_seed=seed,
             )
 
-            alpha_pos = _compute_alpha_pos_from_df(df_train, label_cols)
+            alpha_pos = _compute_alpha_pos_from_df(df_train, focal_label_cols)
 
             # Ultra-rare gamma bump option based on train prevalence < 1%
-            pi = df_train[label_cols].values.mean(axis=0)
+            pi = df_train[focal_label_cols].values.mean(axis=0)
             gamma_use = 2.5 if (pi < 0.01).any() else 2.0
 
             focal = FocalLoss(alpha_pos=alpha_pos, gamma=gamma_use)
+            
+            # Move model to GPU if available
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            model = model.to(device)
+            
+            # Debug: Print device information
+            print(f"Model device: {next(model.parameters()).device}")
+            print(f"Alpha pos device: {alpha_pos.device}")
+            print(f"Target device: {device}")
 
             class FocalTrainer(Trainer):
                 def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
                     labels = inputs.pop("labels")
                     outputs = model(**inputs)
                     logits = outputs.logits
+                    
+                    # Ensure labels are on the same device as logits
+                    if hasattr(labels, 'to'):
+                        labels = labels.to(logits.device)
+                    
                     loss = focal(logits, labels)
                     return (loss, outputs) if return_outputs else loss
 
             trainer = FocalTrainer(
                 model=model, args=args, train_dataset=train_ds, eval_dataset=val_ds,
                 compute_metrics=lambda x: compute_metrics(
-                    x, label_cols,
+                    x, focal_label_cols,
                     context_label="Validation (tuning)",
                     mask_zero_labels=True,
                     mask_ultra_rare_threshold=0.01,
@@ -770,44 +909,7 @@ def run_strategy_experiments(
             per_strategy_reports["weighted_sampler_tuned"] = None
             print(f"[Strategy] weighted_sampler: ❌ failed — {e}")
 
-    # Helper function to apply calibration + threshold tuning to any strategy
-    def apply_calibration_and_thresholds(trainer, strategy_name, verbose=True):
-        """Apply temperature scaling calibration + threshold tuning to any trained model."""
-        try:
-            # Build datasets for prediction
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
-            val_ds = MultiLabelDataset(df_val["incident_summary"].tolist(), df_val[label_cols].values, tokenizer, max_len)
-            test_ds = MultiLabelDataset(df_test["incident_summary"].tolist(), df_test[label_cols].values, tokenizer, max_len)
-            
-            # Import calibration functions
-            try:
-                import sys
-                from pathlib import Path
-                sys.path.append(str(Path(__file__).parent.parent / "imbalance-handling"))
-                from imbalance_handling_strategies import calibrate_and_tune_thresholds
-            except ImportError:
-                print("Warning: Could not import calibration functions. Using basic threshold tuning.")
-                raise Exception("Calibration not available - install required modules")
-            
-            if verbose:
-                print(f"Applying temperature scaling calibration + threshold tuning to {strategy_name}...")
-            
-            # Apply calibration + threshold tuning
-            calibration_results = calibrate_and_tune_thresholds(
-                trainer, 
-                val_ds, 
-                test_ds, 
-                label_cols, 
-                objective="micro",  # Use micro-F1 for threshold tuning
-                max_temp_iter=50, 
-                verbose=verbose
-            )
-            
-            return calibration_results
-            
-        except Exception as e:
-            print(f"Calibration failed for {strategy_name}: {e}")
-            raise e
+
 
     # Threshold-tuned (baseline model with calibration + threshold tuning)
     if "threshold_tuned" in strategies:

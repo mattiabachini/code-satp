@@ -443,10 +443,16 @@ class T5ParaphraseAugmentation:
             from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
             tokenizer = AutoTokenizer.from_pretrained(self.model_name)
             model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
-            if self.device is not None:
-                self._pipeline = pipeline("text2text-generation", model=model, tokenizer=tokenizer, device=self.device)
-            else:
-                self._pipeline = pipeline("text2text-generation", model=model, tokenizer=tokenizer)
+            
+            # Create pipeline with better GPU efficiency settings
+            pipeline_kwargs = {
+                "model": model,
+                "tokenizer": tokenizer,
+                "batch_size": 4,  # Process multiple texts at once for GPU efficiency
+                "device_map": "auto" if self.device is None else self.device
+            }
+            
+            self._pipeline = pipeline("text2text-generation", **pipeline_kwargs)
             self._tokenizer = tokenizer
         except Exception as e:
             print(f"⚠️ T5 paraphraser unavailable: {e}")
@@ -480,12 +486,16 @@ class T5ParaphraseAugmentation:
             f"Text: {safe_text}\n\nParaphrase:"
         )
         try:
+            # Handle seeding for newer transformers versions
             gen_kwargs = {}
             if seed is not None:
-                device_str = str(self.device) if self.device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
-                g = torch.Generator(device=device_str)
-                g.manual_seed(int(seed))
-                gen_kwargs["generator"] = g
+                # For newer transformers, use seed instead of generator
+                gen_kwargs["seed"] = int(seed)
+                # Also try to set torch seed for additional reproducibility
+                torch.manual_seed(int(seed))
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(int(seed))
+            
             outputs = self._pipeline(
                 prompt,
                 do_sample=True,
