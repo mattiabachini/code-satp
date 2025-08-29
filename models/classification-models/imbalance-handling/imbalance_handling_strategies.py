@@ -1093,9 +1093,9 @@ class TemperatureScaling(nn.Module):
             lr: Learning rate for optimization
             verbose: Print optimization progress
         """
-        if not torch.tensor(logits):
+        if not isinstance(logits, torch.Tensor):
             logits = torch.tensor(logits, dtype=torch.float32)
-        if not torch.tensor(labels):
+        if not isinstance(labels, torch.Tensor):
             labels = torch.tensor(labels, dtype=torch.float32)
             
         # Move to same device as logits
@@ -1105,6 +1105,11 @@ class TemperatureScaling(nn.Module):
         
         # Optimizer for temperature parameter
         optimizer = torch.optim.LBFGS([self.temperature], lr=lr, max_iter=max_iter)
+        
+        # Check initial temperature parameter
+        if verbose:
+            print(f"Initial raw temperature parameter: {self.temperature.item():.4f}")
+            print(f"Initial constrained temperature: {self.get_temperature():.4f}")
         
         def eval_loss():
             optimizer.zero_grad()
@@ -1147,6 +1152,7 @@ class TemperatureScaling(nn.Module):
         if verbose:
             print(f"Optimized temperature: {final_temp:.4f}")
             print(f"Raw temperature parameter: {self.temperature.item():.4f}")
+            print(f"Softplus temperature: {F.softplus(self.temperature).item():.4f}")
         
         return final_temp
     
@@ -1160,7 +1166,7 @@ class TemperatureScaling(nn.Module):
         Returns:
             Calibrated probabilities
         """
-        if not torch.tensor(logits):
+        if not isinstance(logits, torch.Tensor):
             logits = torch.tensor(logits, dtype=torch.float32)
         
         # Apply temperature scaling and sigmoid with positive constraint
