@@ -12,7 +12,41 @@ The strategies are organized by implementation priority and resource requirement
 
 ## Tier 1: Immediate Implementation (Highest ROI)
 
-### 1. Focal Loss Implementation
+### 1. Conservative Class Weights (NEW!)
+
+**Why it fits**: Addresses precision collapse from extreme class weights while maintaining recall gains
+**Payoff**: Better precision-recall balance, more stable training, easier hyperparameter tuning
+**Resources**: Minimal - just replace your existing class weight calculation
+
+#### Integration Steps:
+
+```python
+# OLD WAY (can cause precision collapse):
+from strategy_experiments import train_with_class_weights
+
+trainer, metrics, pred_df = train_with_class_weights(
+    model_name, df_train, df_val, df_test, max_len, batch_size, epochs
+)
+
+# NEW WAY (prevents precision collapse):
+from strategy_experiments import train_with_conservative_class_weights
+
+trainer, metrics, pred_df = train_with_conservative_class_weights(
+    model_name, df_train, df_val, df_test, max_len, batch_size, epochs,
+    cap_ratio=3.0,        # Cap weights at 3x (prevents extremes)
+    sqrt_scaling=True,    # Apply sqrt scaling (reduces impact)
+    min_weight=1.0,       # Minimum weight
+    max_weight=10.0       # Maximum weight
+)
+```
+
+#### Expected Impact:
+- Prevents precision collapse from extreme weights (100+ for rare classes)
+- Maintains most recall gains from class weighting
+- More stable training and validation
+- Easier threshold tuning and hyperparameter optimization
+
+### 2. Focal Loss Implementation
 
 **Why it fits**: Single line code change in your existing Hugging Face setup
 **Payoff**: Directly addresses your main problem (class imbalance) without requiring additional data
@@ -255,7 +289,29 @@ for label, info in suggestions.items():
 
 ## Practical Integration Examples
 
-### Example 1: Quick Win - Just Add Focal Loss
+### Example 1: Quick Win - Conservative Class Weights
+
+```python
+# Replace your existing class weights with conservative weights
+from strategy_experiments import train_with_conservative_class_weights
+
+# This prevents precision collapse while maintaining recall gains
+trainer, metrics, pred_df = train_with_conservative_class_weights(
+    model_name="distilbert-base-cased",
+    df_train=df_train,
+    df_val=df_val,
+    df_test=df_test,
+    cap_ratio=3.0,        # Cap weights at 3x (prevents extremes)
+    sqrt_scaling=True,    # Apply sqrt scaling (reduces impact)
+    min_weight=1.0,       # Minimum weight
+    max_weight=10.0       # Maximum weight
+)
+
+print("Conservative weights applied successfully!")
+print(f"Test metrics: {metrics}")
+```
+
+### Example 2: Quick Win - Just Add Focal Loss
 
 ```python
 # In your existing targettype.ipynb, modify the run_final_test_evaluation function:

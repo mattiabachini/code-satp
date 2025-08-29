@@ -24,47 +24,185 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # =============================================================================
+# CONSERVATIVE CLASS WEIGHT REWEIGHTING
+# =============================================================================
+
+def compute_conservative_class_weights(df, label_cols, cap_ratio=3.0, sqrt_scaling=True, min_weight=1.0, max_weight=10.0):
+    """
+    Compute conservative class weights that prevent precision collapse while maintaining recall gains.
+    
+    This function replaces raw pos_weight (N/P) with capped and sqrt-scaled weights to balance
+    the trade-off between recall improvement and precision preservation.
+    
+    Args:
+        df: DataFrame containing the training data
+        label_cols: List of label column names
+        cap_ratio: Maximum ratio for capping weights (default: 3.0)
+        sqrt_scaling: Whether to apply sqrt scaling to reduce extreme weights (default: True)
+        min_weight: Minimum weight value (default: 1.0)
+        max_weight: Maximum weight value (default: 10.0)
+    
+    Returns:
+        torch.Tensor: Conservative class weights of shape (num_labels,)
+    
+    Example:
+        # Raw weights might be [50.0, 25.0, 100.0] for very imbalanced classes
+        # Conservative weights become [3.0, 3.0, 3.0] with cap_ratio=3.0
+        # Or [7.07, 5.0, 10.0] with sqrt scaling and max_weight=10.0
+    """
+    # Calculate raw pos_weight (N/P)
+    P = df[label_cols].sum(axis=0).values.astype(np.float32)
+    N = len(df) - P
+    P = np.where(P == 0, 1.0, P)  # Guard against division by zero
+    raw_weights = N / P
+    
+    # Apply conservative capping
+    if cap_ratio is not None:
+        # Cap weights to prevent extreme values that cause precision collapse
+        capped_weights = np.minimum(raw_weights, cap_ratio)
+    else:
+        capped_weights = raw_weights
+    
+    # Apply sqrt scaling to reduce extreme weights while preserving relative ordering
+    if sqrt_scaling:
+        # sqrt scaling reduces the impact of very large weights
+        # This helps maintain recall gains while preventing precision collapse
+        scaled_weights = np.sqrt(capped_weights)
+    else:
+        scaled_weights = capped_weights
+    
+    # Apply min/max bounds for numerical stability
+    bounded_weights = np.clip(scaled_weights, min_weight, max_weight)
+    
+    # Convert to torch tensor
+    conservative_weights = torch.tensor(bounded_weights, dtype=torch.float)
+    
+    return conservative_weights
+
+
+def compute_adaptive_conservative_weights(df, label_cols, base_cap_ratio=3.0, precision_threshold=0.3, recall_threshold=0.7):
+    """
+    Compute adaptive conservative weights based on validation performance.
+    
+    This function dynamically adjusts the capping ratio based on whether
+    the model is achieving the desired precision-recall balance.
+    
+    Args:
+        df: DataFrame containing the training data
+        label_cols: List of label column names
+        base_cap_ratio: Base capping ratio (default: 3.0)
+        precision_threshold: Minimum precision threshold (default: 0.3)
+        recall_threshold: Minimum recall threshold (default: 0.7)
+    
+    Returns:
+        torch.Tensor: Adaptive conservative class weights
+    """
+    # Start with base conservative weights
+    base_weights = compute_conservative_class_weights(
+        df, label_cols, 
+        cap_ratio=base_cap_ratio, 
+        sqrt_scaling=True
+    )
+    
+    # For now, return base weights
+    # In practice, this could be extended to use validation metrics
+    # to dynamically adjust the capping ratio
+    return base_weights
+
+
+def compute_label_specific_conservative_weights(df, label_cols, label_configs=None):
+    """
+    Compute label-specific conservative weights with different strategies per label.
+    
+    Args:
+        df: DataFrame containing the training data
+        label_cols: List of label column names
+        label_configs: Dict mapping label names to specific configs
+                       Format: {label_name: {'cap_ratio': float, 'sqrt_scaling': bool, 'min_weight': float, 'max_weight': float}}
+    
+    Returns:
+        torch.Tensor: Label-specific conservative class weights
+    """
+    if label_configs is None:
+        # Default configuration for all labels
+        return compute_conservative_class_weights(df, label_cols)
+    
+    # Calculate raw weights first
+    P = df[label_cols].sum(axis=0).values.astype(np.float32)
+    N = len(df) - P
+    P = np.where(P == 0, 1.0, P)
+    raw_weights = N / P
+    
+    conservative_weights = np.zeros_like(raw_weights)
+    
+    for i, label_name in enumerate(label_cols):
+        if label_name in label_configs:
+            config = label_configs[label_name]
+            cap_ratio = config.get('cap_ratio', 3.0)
+            sqrt_scaling = config.get('sqrt_scaling', True)
+            min_weight = config.get('min_weight', 1.0)
+            max_weight = config.get('max_weight', 10.0)
+            
+            # Apply label-specific conservative strategy
+            weight = raw_weights[i]
+            if cap_ratio is not None:
+                weight = min(weight, cap_ratio)
+            if sqrt_scaling:
+                weight = np.sqrt(weight)
+            weight = np.clip(weight, min_weight, max_weight)
+            conservative_weights[i] = weight
+        else:
+            # Use default conservative strategy
+            weight = raw_weights[i]
+            weight = min(weight, 3.0)  # Default cap
+            weight = np.sqrt(weight)   # Default sqrt scaling
+            weight = np.clip(weight, 1.0, 10.0)  # Default bounds
+            conservative_weights[i] = weight
+    
+    return torch.tensor(conservative_weights, dtype=torch.float)
+
+
+# =============================================================================
 # TIER 1: IMMEDIATE IMPLEMENTATION (HIGHEST ROI)
 # =============================================================================
 
 class FocalLoss(nn.Module):
     """
-    Focal Loss for handling class imbalance in multi-label classification.
-    
-    Focal Loss reduces the relative loss for well-classified examples and
-    puts more focus on hard, misclassified examples.
-    
-    Reference: Lin, T. Y., et al. "Focal loss for dense object detection." ICCV 2017.
+    Numerically stable multi-label Focal Loss with per-label alpha.
+
+    Uses log-sigmoid form to avoid explicit sigmoid and log instabilities.
+    alpha_pos is a vector of shape [num_labels] with values typically in [0.25, 0.75].
     """
-    
-    def __init__(self, alpha=1, gamma=2, reduction='mean'):
+
+    def __init__(self, alpha_pos, gamma=2.0, reduction='mean'):
         super(FocalLoss, self).__init__()
-        self.alpha = alpha
-        self.gamma = gamma
+        # Register buffer so it follows model/device without being a parameter
+        alpha_tensor = torch.as_tensor(alpha_pos, dtype=torch.float)
+        self.register_buffer("alpha_pos", alpha_tensor)
+        self.gamma = float(gamma)
         self.reduction = reduction
-    
-    def forward(self, inputs, targets):
+
+    def forward(self, logits, targets):
         """
         Args:
-            inputs: Model predictions (logits) of shape (batch_size, num_classes)
-            targets: Ground truth labels of shape (batch_size, num_classes)
+            logits: Raw model outputs of shape (batch_size, num_labels)
+            targets: Ground truth binary labels of shape (batch_size, num_labels)
         """
-        # Apply sigmoid to get probabilities
-        probs = torch.sigmoid(inputs)
-        
-        # Calculate binary cross entropy
-        bce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
-        
-        # Calculate focal loss
-        pt = torch.where(targets == 1, probs, 1 - probs)
-        focal_loss = self.alpha * (1 - pt) ** self.gamma * bce_loss
-        
+        # Stable log-sigmoid terms
+        logp = F.logsigmoid(logits)
+        log1mp = F.logsigmoid(-logits)
+        # Select per-element log-prob of the true class
+        logpt = torch.where(targets == 1, logp, log1mp)
+        pt = torch.exp(logpt)
+        # Per-element alpha_t using per-label alpha_pos
+        alpha_t = torch.where(targets == 1, self.alpha_pos, 1 - self.alpha_pos)
+        loss = -(alpha_t * (1 - pt).pow(self.gamma) * logpt)
+
         if self.reduction == 'mean':
-            return focal_loss.mean()
-        elif self.reduction == 'sum':
-            return focal_loss.sum()
-        else:
-            return focal_loss
+            return loss.mean()
+        if self.reduction == 'sum':
+            return loss.sum()
+        return loss
 
 class MultiTaskModel(nn.Module):
     """
@@ -291,6 +429,7 @@ class T5ParaphraseAugmentation:
         self.model_name = model_name
         self.device = device  # e.g., "cuda" or "cpu"; if None, auto-select by HF pipeline
         self._pipeline = None
+        self._tokenizer = None
         self.available = True
         # Semantic similarity embedder (sentence-transformers)
         self.embedder_model_name = "sentence-transformers/all-MiniLM-L6-v2"
@@ -308,9 +447,22 @@ class T5ParaphraseAugmentation:
                 self._pipeline = pipeline("text2text-generation", model=model, tokenizer=tokenizer, device=self.device)
             else:
                 self._pipeline = pipeline("text2text-generation", model=model, tokenizer=tokenizer)
+            self._tokenizer = tokenizer
         except Exception as e:
             print(f"⚠️ T5 paraphraser unavailable: {e}")
             self.available = False
+    
+    def _truncate_text(self, text, max_input_tokens=480):
+        """
+        Truncate input text to avoid exceeding max length once the prompt prefix is added.
+        """
+        if self._tokenizer is None:
+            return text
+        try:
+            ids = self._tokenizer.encode(text, truncation=True, max_length=max_input_tokens, add_special_tokens=False)
+            return self._tokenizer.decode(ids, skip_special_tokens=True)
+        except Exception:
+            return text[:2000]
     
     def paraphrase(self, text, num_return_sequences=2, temperature=0.7, top_p=0.9, max_new_tokens=64, seed=None):
         """
@@ -321,15 +473,19 @@ class T5ParaphraseAugmentation:
         self._ensure_pipeline()
         if self._pipeline is None:
             return []
+        safe_text = self._truncate_text(text, max_input_tokens=480)
         prompt = (
             "Paraphrase the following incident summary without changing meaning, entities, actors, or event type. "
             "Use a neutral, report-like tone and do not add or remove facts.\n\n"
-            f"Text: {text}\n\nParaphrase:"
+            f"Text: {safe_text}\n\nParaphrase:"
         )
         try:
             gen_kwargs = {}
             if seed is not None:
-                gen_kwargs["seed"] = seed
+                device_str = str(self.device) if self.device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
+                g = torch.Generator(device=device_str)
+                g.manual_seed(int(seed))
+                gen_kwargs["generator"] = g
             outputs = self._pipeline(
                 prompt,
                 do_sample=True,
@@ -818,29 +974,342 @@ class LLMSyntheticGeneration:
         return df
 
 # =============================================================================
+# CALIBRATION (TEMPERATURE SCALING)
+# =============================================================================
+
+class TemperatureScaling(nn.Module):
+    """
+    Temperature scaling calibration for neural network logits.
+    
+    This module learns a single temperature parameter to calibrate
+    the confidence of predictions, improving reliability of probability
+    estimates before threshold tuning.
+    
+    Reference: "On Calibration of Modern Neural Networks" (Guo et al., 2017)
+    """
+    
+    def __init__(self):
+        super(TemperatureScaling, self).__init__()
+        # Single temperature parameter for all classes
+        self.temperature = nn.Parameter(torch.ones(1) * 1.5)
+    
+    def forward(self, logits):
+        """
+        Apply temperature scaling to logits.
+        
+        Args:
+            logits: Raw model outputs (batch_size, num_classes)
+            
+        Returns:
+            Calibrated logits (batch_size, num_classes)
+        """
+        return logits / self.temperature
+    
+    def fit(self, logits, labels, max_iter=50, lr=0.01, verbose=False):
+        """
+        Fit temperature parameter on validation set to minimize NLL.
+        
+        Args:
+            logits: Validation logits (n_samples, n_classes)
+            labels: Validation labels (n_samples, n_classes) - binary for multi-label
+            max_iter: Maximum optimization iterations
+            lr: Learning rate for optimization
+            verbose: Print optimization progress
+        """
+        if not torch.is_tensor(logits):
+            logits = torch.tensor(logits, dtype=torch.float32)
+        if not torch.is_tensor(labels):
+            labels = torch.tensor(labels, dtype=torch.float32)
+            
+        # Move to same device as logits
+        device = logits.device
+        self.to(device)
+        labels = labels.to(device)
+        
+        # Optimizer for temperature parameter
+        optimizer = torch.optim.LBFGS([self.temperature], lr=lr, max_iter=max_iter)
+        
+        def eval_loss():
+            optimizer.zero_grad()
+            # Apply temperature scaling
+            scaled_logits = self.forward(logits)
+            # Multi-label binary cross-entropy loss
+            loss = F.binary_cross_entropy_with_logits(scaled_logits, labels)
+            loss.backward()
+            return loss
+        
+        if verbose:
+            print(f"Initial temperature: {self.temperature.item():.4f}")
+        
+        # Optimize temperature
+        optimizer.step(eval_loss)
+        
+        if verbose:
+            print(f"Optimized temperature: {self.temperature.item():.4f}")
+        
+        return self.temperature.item()
+    
+    def calibrate_probs(self, logits):
+        """
+        Get calibrated probabilities from logits.
+        
+        Args:
+            logits: Raw model outputs
+            
+        Returns:
+            Calibrated probabilities
+        """
+        if not torch.is_tensor(logits):
+            logits = torch.tensor(logits, dtype=torch.float32)
+        
+        # Apply temperature scaling and sigmoid
+        with torch.no_grad():
+            calibrated_logits = self.forward(logits)
+            calibrated_probs = torch.sigmoid(calibrated_logits)
+        
+        return calibrated_probs.numpy() if isinstance(calibrated_probs, torch.Tensor) else calibrated_probs
+
+def calibrate_and_tune_thresholds(
+    trainer, 
+    val_dataset, 
+    test_dataset, 
+    label_cols, 
+    objective="micro", 
+    max_temp_iter=50, 
+    verbose=True
+):
+    """
+    Perform temperature scaling calibration followed by threshold tuning.
+    
+    This implements the "Calibrate, then threshold" strategy for better
+    precision/recall balance on rare labels.
+    
+    Args:
+        trainer: Trained Hugging Face trainer
+        val_dataset: Validation dataset for calibration and threshold tuning
+        test_dataset: Test dataset for final evaluation
+        label_cols: List of label column names
+        objective: "micro" or "macro" F1 for threshold tuning
+        max_temp_iter: Maximum iterations for temperature optimization
+        verbose: Print calibration and tuning progress
+        
+    Returns:
+        Dictionary with calibrated test metrics and predictions
+    """
+    from sklearn.metrics import classification_report, f1_score, hamming_loss, accuracy_score
+    
+    # Get validation predictions for calibration
+    if verbose:
+        print("Getting validation predictions for calibration...")
+    val_out = trainer.predict(val_dataset)
+    val_logits = val_out.predictions
+    val_labels = val_out.label_ids
+    
+    # Fit temperature scaling on validation set
+    if verbose:
+        print("Fitting temperature scaling...")
+    temp_scaler = TemperatureScaling()
+    final_temp = temp_scaler.fit(val_logits, val_labels, max_iter=max_temp_iter, verbose=verbose)
+    
+    # Get calibrated validation probabilities
+    val_probs_calibrated = temp_scaler.calibrate_probs(val_logits)
+    
+    # Tune thresholds on calibrated validation probabilities
+    if verbose:
+        print("Tuning thresholds on calibrated probabilities...")
+    
+    if objective == "micro":
+        # Global threshold for micro-F1
+        from sklearn.metrics import f1_score
+        grid = np.linspace(0.05, 0.95, 19)
+        best_thresh = 0.5
+        best_f1 = 0.0
+        
+        for thresh in grid:
+            preds = (val_probs_calibrated >= thresh).astype(int)
+            f1 = f1_score(val_labels, preds, average="micro", zero_division=0)
+            if f1 > best_f1:
+                best_f1 = f1
+                best_thresh = thresh
+        
+        thresholds = np.full(len(label_cols), best_thresh)
+        if verbose:
+            print(f"Optimal global threshold: {best_thresh:.3f} (micro-F1: {best_f1:.4f})")
+    
+    else:  # macro or per-label
+        # Per-label thresholds for macro-F1
+        # Define the function inline to avoid circular imports
+        def choose_thresholds_per_label_local(val_probs, val_true, grid=np.linspace(0.0, 1.0, 101), beta=1.0):
+            """Select a threshold per label independently by maximizing F-beta."""
+            from sklearn.metrics import fbeta_score
+            n_labels = val_true.shape[1]
+            th = np.full(n_labels, 0.5, dtype=float)
+            for j in range(n_labels):
+                y = val_true[:, j]
+                p = val_probs[:, j]
+                best_t, best_s = 0.5, -1.0
+                for t in grid:
+                    s = fbeta_score(y, (p >= t).astype(int), beta=beta, zero_division=0)
+                    if s > best_s:
+                        best_s, best_t = s, t
+                th[j] = best_t
+            return th
+        thresholds = choose_thresholds_per_label_local(val_probs_calibrated, val_labels.astype(int))
+        if verbose:
+            print(f"Per-label thresholds: {thresholds}")
+    
+    # Get test predictions and apply calibration + thresholds
+    if verbose:
+        print("Applying calibration and thresholds to test set...")
+    test_out = trainer.predict(test_dataset)
+    test_logits = test_out.predictions
+    test_labels = test_out.label_ids
+    
+    # Calibrate test probabilities
+    test_probs_calibrated = temp_scaler.calibrate_probs(test_logits)
+    
+    # Apply tuned thresholds
+    test_preds = (test_probs_calibrated >= thresholds[None, :]).astype(int)
+    
+    # Compute final metrics
+    test_true = test_labels.astype(int)
+    
+    # Print comparison: uncalibrated vs calibrated+tuned
+    if verbose:
+        print("\n=== COMPARISON: Uncalibrated vs Calibrated+Tuned ===")
+        
+        # Uncalibrated with 0.5 threshold
+        test_probs_uncal = torch.sigmoid(torch.tensor(test_logits)).numpy()
+        test_preds_uncal = (test_probs_uncal > 0.5).astype(int)
+        
+        uncal_micro_f1 = f1_score(test_true, test_preds_uncal, average="micro", zero_division=0)
+        uncal_macro_f1 = f1_score(test_true, test_preds_uncal, average="macro", zero_division=0)
+        
+        cal_micro_f1 = f1_score(test_true, test_preds, average="micro", zero_division=0)
+        cal_macro_f1 = f1_score(test_true, test_preds, average="macro", zero_division=0)
+        
+        print(f"Uncalibrated (thresh=0.5): Micro-F1={uncal_micro_f1:.4f}, Macro-F1={uncal_macro_f1:.4f}")
+        print(f"Calibrated+Tuned: Micro-F1={cal_micro_f1:.4f}, Macro-F1={cal_macro_f1:.4f}")
+        print(f"Improvement: Micro-F1={cal_micro_f1-uncal_micro_f1:+.4f}, Macro-F1={cal_macro_f1-uncal_macro_f1:+.4f}")
+    
+    # Final classification report
+    if verbose:
+        print("\n=== Classification Report: Calibrated + Threshold Tuned ===")
+        print(classification_report(test_true, test_preds, target_names=label_cols, zero_division=0))
+    
+    # Compute all metrics
+    report = classification_report(test_true, test_preds, target_names=label_cols, zero_division=0, output_dict=True)
+    micro_f1 = f1_score(test_true, test_preds, average="micro", zero_division=0)
+    macro_f1 = f1_score(test_true, test_preds, average="macro", zero_division=0)
+    
+    metrics = {
+        "hamming_loss": hamming_loss(test_true, test_preds),
+        "subset_accuracy": accuracy_score(test_true, test_preds),
+        "micro_f1": micro_f1,
+        "macro_f1": macro_f1,
+        "temperature": final_temp,
+        "thresholds": thresholds.tolist(),
+        "objective": objective
+    }
+    metrics.update(report)
+    
+    # Create predictions DataFrame
+    pred_df = pd.DataFrame()
+    for i, col in enumerate(label_cols):
+        pred_df[f"true_{col}"] = test_true[:, i]
+        pred_df[f"pred_{col}"] = test_preds[:, i]
+        pred_df[f"prob_calibrated_{col}"] = test_probs_calibrated[:, i]
+        pred_df[f"prob_uncalibrated_{col}"] = test_probs_uncal[:, i]
+    
+    return {
+        "metrics": metrics,
+        "predictions": pred_df,
+        "temperature": final_temp,
+        "thresholds": thresholds,
+        "calibrated_probs": test_probs_calibrated
+    }
+
+# =============================================================================
 # INTEGRATION HELPERS
 # =============================================================================
 
 def integrate_focal_loss(trainer, alpha=1, gamma=2):
     """
-    Integrate Focal Loss into existing Hugging Face Trainer.
+    Backward-compatible wrapper retained for legacy calls.
+    Defaults to scalar alpha converted to a vector for compatibility.
     """
-    focal_loss = FocalLoss(alpha=alpha, gamma=gamma)
-    
+    # Create a trivial vector alpha_pos later inside the closure after first batch to infer K
+    scalar_alpha = float(alpha)
+
     # Override the compute_loss method
-    original_compute_loss = trainer.compute_loss
-    
     def compute_loss_with_focal(model, inputs, return_outputs=False, **kwargs):
-        # Hugging Face Trainer may pass extra kwargs (e.g., num_items_in_batch); accept and ignore them
         outputs = model(**inputs)
         logits = outputs.logits
         labels = inputs.get("labels")
-        
-        # Apply focal loss
-        loss = focal_loss(logits, labels)
-        
+
+        # Build a per-label alpha_pos vector on first use
+        num_labels = logits.shape[-1]
+        alpha_pos_vec = torch.full((num_labels,), scalar_alpha, dtype=torch.float, device=logits.device)
+        loss_fn = FocalLoss(alpha_pos=alpha_pos_vec, gamma=gamma)
+        loss = loss_fn(logits, labels)
         return (loss, outputs) if return_outputs else loss
-    
+
+    trainer.compute_loss = compute_loss_with_focal
+    return trainer
+
+def compute_alpha_pos(y_train, clamp_min=0.25, clamp_max=0.75):
+    """
+    Compute per-label alpha_pos from training labels y_train (tensor or array) of shape [N, K].
+    alpha_pos_k is proportional to sqrt(median(pi) / pi_k), then clamped to [clamp_min, clamp_max].
+    """
+    if not torch.is_tensor(y_train):
+        y_train = torch.as_tensor(y_train)
+    y_train = y_train.float()
+    pi = y_train.mean(dim=0).clamp_(min=1e-6, max=1 - 1e-6)
+    median_pi = pi.median()
+    # Weight up rare labels relative to the median prevalence
+    w = torch.sqrt(median_pi / pi)
+    alpha_pos = torch.clamp(w, min=float(clamp_min), max=float(clamp_max))
+    return alpha_pos
+
+def integrate_focal_loss_advanced(
+    trainer,
+    y_train=None,
+    alpha_pos=None,
+    gamma=2.0,
+    use_ultra_rare_gamma=False,
+    ultra_rare_threshold=0.01,
+    ultra_rare_gamma=2.5,
+    clamp_min=0.25,
+    clamp_max=0.75,
+):
+    """
+    Integrate numerically-stable focal loss with per-label alpha into an existing Trainer.
+
+    If y_train is provided, alpha_pos is computed once from training labels; otherwise alpha_pos must be provided.
+    Optionally bump gamma to ultra_rare_gamma if any label prevalence in y_train is < ultra_rare_threshold.
+    """
+    if alpha_pos is None:
+        if y_train is None:
+            raise ValueError("Either y_train or alpha_pos must be provided")
+        alpha_pos = compute_alpha_pos(y_train, clamp_min=clamp_min, clamp_max=clamp_max)
+
+    if use_ultra_rare_gamma and y_train is not None:
+        yt = y_train if torch.is_tensor(y_train) else torch.as_tensor(y_train)
+        pi = yt.float().mean(dim=0)
+        if torch.any(pi < float(ultra_rare_threshold)):
+            gamma = float(ultra_rare_gamma)
+
+    def compute_loss_with_focal(model, inputs, return_outputs=False, **kwargs):
+        outputs = model(**inputs)
+        logits = outputs.logits
+        labels = inputs.get("labels")
+        # Ensure alpha on correct device
+        ap = alpha_pos.to(logits.device) if torch.is_tensor(alpha_pos) else torch.as_tensor(alpha_pos, device=logits.device)
+        loss_fn = FocalLoss(alpha_pos=ap, gamma=gamma)
+        loss = loss_fn(logits, labels)
+        return (loss, outputs) if return_outputs else loss
+
     trainer.compute_loss = compute_loss_with_focal
     return trainer
 

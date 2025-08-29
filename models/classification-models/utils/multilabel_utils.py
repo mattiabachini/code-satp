@@ -3,7 +3,7 @@ import random
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from sklearn.metrics import hamming_loss, accuracy_score, classification_report, f1_score
+from sklearn.metrics import hamming_loss, accuracy_score, classification_report, f1_score, average_precision_score
 from skmultilearn.model_selection import IterativeStratification
 from transformers import (
     AutoTokenizer,
@@ -145,20 +145,43 @@ class MultiLabelDataset(Dataset):
 
 ## Metrics function
 
-def compute_metrics(eval_pred, target_names, exclusive_label=None, context_label=None):
+def compute_metrics(
+        eval_pred,
+        target_names,
+        exclusive_label=None,
+        context_label=None,
+        mask_zero_labels=False,
+        mask_ultra_rare_threshold=None
+):
     """
     Compute evaluation metrics for multi-label classification.
     Includes Hamming Loss, Subset Accuracy, and Classification Report for all labels.
     """
     logits, labels = eval_pred
-    predictions = (torch.sigmoid(torch.tensor(logits)) > 0.5).numpy()  # Apply threshold
+    # Probabilities for PR-AUC
+    probs_full = torch.sigmoid(torch.tensor(logits)).numpy()
+    labels_full = labels.astype(int)
+    
+    # Optionally mask zero or ultra-rare labels from the printed/classification_report metrics
+    keep_mask = np.ones(len(target_names), dtype=bool)
+    if mask_zero_labels or (mask_ultra_rare_threshold is not None):
+        prevalences = labels_full.mean(axis=0)
+        if mask_zero_labels:
+            keep_mask &= (prevalences > 0)
+        if mask_ultra_rare_threshold is not None:
+            keep_mask &= (prevalences >= float(mask_ultra_rare_threshold))
+    kept_indices = np.where(keep_mask)[0]
+    kept_names = [target_names[i] for i in kept_indices]
+    
+    probs = probs_full[:, kept_indices]
+    predictions = (probs > 0.5).astype(int)  # Apply default threshold for printed report
     # Optionally enforce exclusivity of a specific label (e.g., "no_target")
     if exclusive_label is not None and exclusive_label in target_names:
         exclusive_idx = target_names.index(exclusive_label)
         other_indices = [i for i, name in enumerate(target_names) if i != exclusive_idx]
         has_other = (predictions[:, other_indices].sum(axis=1) > 0)
         predictions[has_other, exclusive_idx] = 0
-    labels = labels.astype(int)
+    labels = labels_full[:, kept_indices]
 
     # Verify Labels
     print("Shape of labels:", labels.shape)  # Ensures correct dimensions
@@ -173,13 +196,18 @@ def compute_metrics(eval_pred, target_names, exclusive_label=None, context_label
 
     # Explicit micro-F1 for selection and reporting (maximize)
     micro_f1 = f1_score(labels, predictions, average="micro", zero_division=0)
+    # Micro PR-AUC (average precision) using probabilities
+    try:
+        pr_auc_micro = float(average_precision_score(labels, probs, average="micro"))
+    except Exception:
+        pr_auc_micro = 0.0
+    try:
+        pr_auc_macro = float(average_precision_score(labels, probs, average="macro"))
+    except Exception:
+        pr_auc_macro = 0.0
 
     # Classification Report
-    report = classification_report(
-        labels, predictions,
-        target_names=target_names,
-        zero_division=0, output_dict=True
-    )
+    report = classification_report(labels, predictions, target_names=kept_names, zero_division=0, output_dict=True)
 
     # Print complete report for reference with context
     if context_label:
@@ -187,7 +215,7 @@ def compute_metrics(eval_pred, target_names, exclusive_label=None, context_label
     else:
         print("\n=== Classification Report Context: (unspecified) ===")
     print("Full Classification Report:")
-    print(classification_report(labels, predictions, target_names=target_names, zero_division=0))
+    print(classification_report(labels, predictions, target_names=kept_names, zero_division=0))
 
 
     # Summary Metrics for Trainer
@@ -195,6 +223,8 @@ def compute_metrics(eval_pred, target_names, exclusive_label=None, context_label
         "hamming_loss": hamming,
         "subset_accuracy": subset_acc,
         "micro_f1": micro_f1,
+        "pr_auc_micro": pr_auc_micro,
+        "pr_auc_macro": pr_auc_macro,
     }
     metrics.update(report)
     return metrics

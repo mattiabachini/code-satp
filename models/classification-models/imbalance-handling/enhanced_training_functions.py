@@ -15,14 +15,15 @@ import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments
-from sklearn.metrics import classification_report, hamming_loss, accuracy_score
+from sklearn.metrics import classification_report, hamming_loss, accuracy_score, average_precision_score
 from skmultilearn.model_selection import IterativeStratification
 
 # Import our imbalance handling strategies
 from imbalance_handling_strategies import (
     FocalLoss, MultiTaskModel, BackTranslationAugmentation, 
     ErrorAnalysisRefinement, integrate_focal_loss,
-    create_balanced_sampler, apply_imbalance_strategies
+    create_balanced_sampler, apply_imbalance_strategies,
+    compute_alpha_pos, integrate_focal_loss_advanced
 )
 
 # =============================================================================
@@ -80,6 +81,13 @@ def train_transformer_model_with_focal_loss(
     epochs=2,
     focal_alpha=1,
     focal_gamma=2,
+    use_ultra_rare_gamma=True,
+    ultra_rare_threshold=0.01,
+    ultra_rare_gamma=2.5,
+    mask_zero_labels=True,
+    mask_ultra_rare_threshold=0.01,
+    use_calibration=False,
+    calibration_objective="micro",
     seed=42
 ):
     """
@@ -144,7 +152,7 @@ def train_transformer_model_with_focal_loss(
         logging_dir="./logs",
         logging_steps=10,
         load_best_model_at_end=True,
-        metric_for_best_model='eval_micro_f1',
+        metric_for_best_model='eval_pr_auc_macro',
         greater_is_better=True,
         save_total_limit=2,
         report_to="none",
@@ -161,40 +169,80 @@ def train_transformer_model_with_focal_loss(
         compute_metrics=lambda eval_pred: compute_metrics(
             eval_pred,
             target_names,
+            mask_zero_labels=mask_zero_labels,
+            mask_ultra_rare_threshold=mask_ultra_rare_threshold,
             context_label="Validation (tuning)"
         )
     )
 
-    # Integrate Focal Loss
-    trainer = integrate_focal_loss(trainer, alpha=focal_alpha, gamma=focal_gamma)
+    # Integrate advanced Focal Loss with per-label alpha computed from train labels
+    y_train = torch.as_tensor(df_train[target_names].values, dtype=torch.float)
+    alpha_pos = compute_alpha_pos(y_train, clamp_min=0.25, clamp_max=0.75)
+    trainer = integrate_focal_loss_advanced(
+        trainer,
+        y_train=y_train,
+        alpha_pos=alpha_pos,
+        gamma=focal_gamma,
+        use_ultra_rare_gamma=use_ultra_rare_gamma,
+        ultra_rare_threshold=ultra_rare_threshold,
+        ultra_rare_gamma=ultra_rare_gamma,
+        clamp_min=0.25,
+        clamp_max=0.75,
+    )
 
     # Train the model
     trainer.train()
 
-    # Final evaluation on test set: label context and use predict()
-    trainer.compute_metrics = lambda eval_pred: compute_metrics(
-        eval_pred,
-        target_names,
-        context_label="Final test evaluation"
-    )
-    predictions_output = trainer.predict(test_dataset)
-    test_results = predictions_output.metrics
-    logits = predictions_output.predictions
-    labels = predictions_output.label_ids
+    # Check if calibration is requested
+    if use_calibration:
+        print("Using temperature scaling calibration before threshold tuning...")
+        
+        # Import calibration function
+        from imbalance_handling_strategies import calibrate_and_tune_thresholds
+        
+        # Apply calibration and threshold tuning
+        calibration_results = calibrate_and_tune_thresholds(
+            trainer, 
+            val_dataset, 
+            test_dataset, 
+            target_names, 
+            objective=calibration_objective,
+            max_temp_iter=50, 
+            verbose=True
+        )
+        
+        test_results = calibration_results["metrics"]
+        pred_df = calibration_results["predictions"]
+        pred_df["incident_summary"] = df_test["incident_summary"].values
+        pred_df["original_idx"] = df_test.index
+        
+    else:
+        # Standard evaluation without calibration
+        trainer.compute_metrics = lambda eval_pred: compute_metrics(
+            eval_pred,
+            target_names,
+            mask_zero_labels=mask_zero_labels,
+            mask_ultra_rare_threshold=mask_ultra_rare_threshold,
+            context_label="Final test evaluation"
+        )
+        predictions_output = trainer.predict(test_dataset)
+        test_results = predictions_output.metrics
+        logits = predictions_output.predictions
+        labels = predictions_output.label_ids
 
-    # Convert to probabilities and binary predictions
-    probs = torch.sigmoid(torch.tensor(logits)).numpy()
-    binary_preds = (probs > 0.5).astype(int)
+        # Convert to probabilities and binary predictions
+        probs = torch.sigmoid(torch.tensor(logits)).numpy()
+        binary_preds = (probs > 0.5).astype(int)
 
-    # Build predictions DataFrame
-    pred_df = pd.DataFrame()
-    for i, col in enumerate(target_names):
-        pred_df[f"true_{col}"] = labels[:, i]
-        pred_df[f"pred_{col}"] = binary_preds[:, i]
-        pred_df[f"prob_{col}"] = probs[:, i]
+        # Build predictions DataFrame
+        pred_df = pd.DataFrame()
+        for i, col in enumerate(target_names):
+            pred_df[f"true_{col}"] = labels[:, i]
+            pred_df[f"pred_{col}"] = binary_preds[:, i]
+            pred_df[f"prob_{col}"] = probs[:, i]
 
-    pred_df["incident_summary"] = df_test["incident_summary"].values
-    pred_df["original_idx"] = df_test.index
+        pred_df["incident_summary"] = df_test["incident_summary"].values
+        pred_df["original_idx"] = df_test.index
 
     return trainer, test_results, pred_df
 
@@ -417,6 +465,7 @@ def run_enhanced_experiments(
             - 'augmentation': Apply data augmentation
             - 'multitask': Use multi-task learning (requires multiple datasets)
             - 'error_analysis': Include error analysis and refinement suggestions
+            - 'calibration': Use temperature scaling calibration before threshold tuning
     """
     
     if model_names is None:
@@ -450,6 +499,11 @@ def run_enhanced_experiments(
             elif 'augmentation' in strategies:
                 trainer, test_results, pred_df = train_transformer_model_with_augmentation(
                     model_name, df_train_subset, df_val, df_test, max_len, batch_size, epochs
+                )
+            elif 'calibration' in strategies:
+                trainer, test_results, pred_df = train_transformer_model_with_focal_loss(
+                    model_name, df_train_subset, df_val, df_test, max_len, batch_size, epochs,
+                    use_calibration=True, calibration_objective="micro"
                 )
             else:  # Default to focal loss
                 trainer, test_results, pred_df = train_transformer_model_with_focal_loss(
@@ -498,13 +552,29 @@ def run_enhanced_experiments(
 # UTILITY FUNCTIONS
 # =============================================================================
 
-def compute_metrics(eval_pred, target_names, context_label=None):
+def compute_metrics(eval_pred, target_names, context_label=None, mask_zero_labels=False, mask_ultra_rare_threshold=None):
     """
     Compute evaluation metrics for multi-label classification.
     """
     logits, labels = eval_pred
-    predictions = (torch.sigmoid(torch.tensor(logits)) > 0.5).numpy()
-    labels = labels.astype(int)
+    probs_full = torch.sigmoid(torch.tensor(logits)).numpy()
+    labels_full = labels.astype(int)
+
+    # Determine label indices to keep
+    keep_mask = np.ones(len(target_names), dtype=bool)
+    if mask_zero_labels or (mask_ultra_rare_threshold is not None):
+        prevalences = labels_full.mean(axis=0)
+        if mask_zero_labels:
+            keep_mask &= (prevalences > 0)
+        if mask_ultra_rare_threshold is not None:
+            keep_mask &= (prevalences >= float(mask_ultra_rare_threshold))
+    kept_indices = np.where(keep_mask)[0]
+    kept_names = [target_names[i] for i in kept_indices]
+
+    # Slice to kept labels
+    probs = probs_full[:, kept_indices]
+    labels = labels_full[:, kept_indices]
+    predictions = (probs > 0.5).astype(int)
 
     # Hamming Loss
     hamming = hamming_loss(labels, predictions)
@@ -519,7 +589,7 @@ def compute_metrics(eval_pred, target_names, context_label=None):
     # Classification Report
     report = classification_report(
         labels, predictions,
-        target_names=target_names,
+        target_names=kept_names,
         zero_division=0, output_dict=True
     )
 
@@ -532,13 +602,25 @@ def compute_metrics(eval_pred, target_names, context_label=None):
     else:
         print("\n=== Classification Report Context: (unspecified) ===")
     print("Full Classification Report:")
-    print(classification_report(labels, predictions, target_names=target_names, zero_division=0))
+    print(classification_report(labels, predictions, target_names=kept_names, zero_division=0))
 
     # Summary Metrics for Trainer
+    # Add micro PR-AUC
+    try:
+        pr_auc_micro = float(average_precision_score(labels, probs, average="micro"))
+    except Exception:
+        pr_auc_micro = 0.0
+    try:
+        pr_auc_macro = float(average_precision_score(labels, probs, average="macro"))
+    except Exception:
+        pr_auc_macro = 0.0
+
     metrics = {
         "hamming_loss": hamming,
         "subset_accuracy": subset_acc,
         "micro_f1": micro_f1,
+        "pr_auc_micro": pr_auc_micro,
+        "pr_auc_macro": pr_auc_macro,
     }
     metrics.update(report)
     return metrics
