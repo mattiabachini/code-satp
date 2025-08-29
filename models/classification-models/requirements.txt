@@ -9,6 +9,7 @@ deep-translator>=1.11.4
 
 
 # Hugging Face stack (safe for Colab)
+# transformers>=4.46 - ensures seed parameter support in generate() method
 transformers>=4.46
 accelerate>=0.30
 datasets>=2.19

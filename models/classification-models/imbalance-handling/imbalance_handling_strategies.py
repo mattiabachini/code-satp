@@ -452,11 +452,53 @@ class T5ParaphraseAugmentation:
                 "device_map": "auto" if self.device is None else self.device
             }
             
+            # With transformers >= 4.46, batch_size should work properly for T5 models
             self._pipeline = pipeline("text2text-generation", **pipeline_kwargs)
             self._tokenizer = tokenizer
+            
+            # Check and report model capabilities
+            self._check_model_capabilities()
         except Exception as e:
             print(f"⚠️ T5 paraphraser unavailable: {e}")
             self.available = False
+    
+    def _check_model_capabilities(self):
+        """Check what generation features this model supports."""
+        if not hasattr(self, '_pipeline') or self._pipeline is None:
+            return
+        
+        try:
+            model = self._pipeline.model
+            generation_config = getattr(model, 'generation_config', None)
+            
+            print(f"🔍 Model: {self.model_name}")
+            print(f"   - Generation config available: {generation_config is not None}")
+            
+            if generation_config:
+                # Check for seed parameter support
+                seed_supported = hasattr(generation_config, 'seed') or 'seed' in generation_config.__dict__
+                print(f"   - Seed parameter supported: {seed_supported}")
+                
+                # Check for other useful parameters
+                if hasattr(generation_config, 'do_sample'):
+                    print(f"   - do_sample supported: ✅")
+                if hasattr(generation_config, 'temperature'):
+                    print(f"   - temperature supported: ✅")
+                if hasattr(generation_config, 'top_p'):
+                    print(f"   - top_p supported: ✅")
+            
+            print(f"   - Using transformers version: {self._get_transformers_version()}")
+            
+        except Exception as e:
+            print(f"⚠️ Could not check model capabilities: {e}")
+    
+    def _get_transformers_version(self):
+        """Get the installed transformers version."""
+        try:
+            import transformers
+            return transformers.__version__
+        except:
+            return "Unknown"
     
     def _truncate_text(self, text, max_input_tokens=480):
         """
@@ -486,16 +528,28 @@ class T5ParaphraseAugmentation:
             f"Text: {safe_text}\n\nParaphrase:"
         )
         try:
-            # Handle seeding for newer transformers versions
+            # Handle seeding for reproducible generation
             gen_kwargs = {}
             if seed is not None:
-                # For newer transformers, use seed instead of generator
-                gen_kwargs["seed"] = int(seed)
-                # Also try to set torch seed for additional reproducibility
+                # Set torch seed for reproducibility (this always works)
                 torch.manual_seed(int(seed))
                 if torch.cuda.is_available():
                     torch.cuda.manual_seed_all(int(seed))
+                
+                # Check if this specific model supports the seed parameter
+                # FLAN-T5 models often don't support it even in newer transformers versions
+                if hasattr(self._pipeline.model, 'generation_config'):
+                    generation_config = self._pipeline.model.generation_config
+                    # Only add seed if the model's generation config supports it
+                    if hasattr(generation_config, 'seed') or 'seed' in generation_config.__dict__:
+                        gen_kwargs["seed"] = int(seed)
+                        print(f"Using seed parameter for reproducible generation")
+                    else:
+                        print(f"Model {self.model_name} doesn't support seed parameter, using torch seeding only")
+                else:
+                    print(f"Could not determine seed support for {self.model_name}, using torch seeding only")
             
+            # Generate with the model - will use seed parameter if available
             outputs = self._pipeline(
                 prompt,
                 do_sample=True,
