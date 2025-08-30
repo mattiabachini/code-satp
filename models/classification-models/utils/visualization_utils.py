@@ -27,8 +27,8 @@ def scatter_plot_speed_vs_accuracy(df, x_col, y_col, hue_col, size_col, title):
         alpha=0.7,
         palette="turbo"
     )
-    x_label_cleaned = x_col.replace("eval_", "").replace("_", " ").title()
-    y_label_cleaned = y_col.replace("eval_", "").replace("_", " ").title()
+    x_label_cleaned = x_col.replace("eval_", "").replace("test_", "").replace("_", " ").title()
+    y_label_cleaned = y_col.replace("eval_", "").replace("test_", "").replace("_", " ").title()
     scatter.set_title(title)
     scatter.set_xlabel(x_label_cleaned)
     scatter.set_ylabel(y_label_cleaned)
@@ -51,7 +51,7 @@ def heatmap_label_f1_scores(
     df,
     fraction_col="fraction_label",
     model_label_col="model_label",
-    f1_score_prefix="eval_",
+    f1_score_prefix="test_",
     f1_score_suffix="_f1-score",
     avg_identifier="avg",
     title="F1 Scores for Each Label Across Models",
@@ -65,7 +65,7 @@ def heatmap_label_f1_scores(
     - df: DataFrame containing the results
     - fraction_col: Column indicating data fraction (default: 'fraction_label')
     - model_label_col: Column for model names (default: 'model_label')
-    - f1_score_prefix: Prefix for F1-score columns (default: 'eval_')
+    - f1_score_prefix: Prefix for F1-score columns (default: 'test_')
     - f1_score_suffix: Suffix for F1-score columns (default: '_f1-score')
     - avg_identifier: Substring to exclude average columns (default: 'avg')
     - title: Plot title
@@ -88,6 +88,17 @@ def heatmap_label_f1_scores(
         col for col in df_100.columns
         if col.startswith(f1_score_prefix) and col.endswith(f1_score_suffix) and avg_identifier not in col
     ]
+    
+    # Debug: print what we found
+    print(f"Found {len(label_f1_columns)} label F1 columns: {label_f1_columns}")
+    print(f"DataFrame shape: {df_100.shape}")
+    print(f"Available columns: {list(df_100.columns)}")
+    
+    # Check if we have any label columns
+    if not label_f1_columns:
+        print("Warning: No label F1 columns found! This might cause the error.")
+        return
+    
     # Prepare DataFrame for heatmap
     df_f1_100 = df_100[[model_label_col] + label_f1_columns]
     df_f1_melted_100 = df_f1_100.melt(id_vars=[model_label_col], var_name="Label", value_name="F1 Score")
@@ -105,8 +116,15 @@ def heatmap_label_f1_scores(
     event_order = df_f1_pivot_100.mean().sort_values(ascending=False).index
     df_f1_pivot_100 = df_f1_pivot_100[event_order]
     # Sort models (rows) by their Micro F1 score (descending order) if available
-    if "eval_micro avg_f1-score" in df_100.columns:
-        df_model_avg_f1 = df_100.set_index(model_label_col)["eval_micro avg_f1-score"].sort_values(ascending=False)
+    # Try different possible column names for micro F1 score
+    micro_f1_col = None
+    for col in df_100.columns:
+        if "micro" in col and "f1" in col and "avg" in col:
+            micro_f1_col = col
+            break
+    
+    if micro_f1_col is not None:
+        df_model_avg_f1 = df_100.set_index(model_label_col)[micro_f1_col].sort_values(ascending=False)
         model_order = df_model_avg_f1.index
         df_f1_pivot_100 = df_f1_pivot_100.loc[model_order]
     # Plot
@@ -150,11 +168,11 @@ def plot_heatmap(results_df, value, title_suffix=""):
         annot=True,         # writes the values in each cell
         fmt=".3f",          # format for floating point
         cmap="YlGnBu",      # color palette
-        cbar_kws={"label": value.replace("eval_", "").replace("_", " ").title()}
+        cbar_kws={"label": value.replace("eval_", "").replace("test_", "").replace("_", " ").title()}
     )
     
     # Labeling and layout
-    metric_name = value.replace("eval_", "").replace("_", " ").title()
+    metric_name = value.replace("eval_", "").replace("test_", "").replace("_", " ").title()
     plt.title(f"{metric_name} by Model and Data Fraction{title_suffix}")
     plt.xlabel("Data Fraction")
     plt.ylabel("Model")
