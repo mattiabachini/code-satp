@@ -689,23 +689,21 @@ def create_rare_labels_comparison_plots(predictions_df, task_name, rare_labels,
         tuple: (combined_figure, combined_axes, individual_plots)
     """
     individual_plots = []
-    
-    # Create individual plots - one per rare label
-    for label in rare_labels:
-        fig, ax = create_label_focused_plot(
-            predictions_df,
-            task_name,
-            label,
-            figsize=figsize_individual
-        )
-        if fig is not None:
-            individual_plots.append((fig, ax))
-            if show_individual:
+
+    # Optionally create individual plots - one per rare label
+    if show_individual:
+        for label in rare_labels:
+            fig, ax = create_label_focused_plot(
+                predictions_df,
+                task_name,
+                label,
+                figsize=figsize_individual
+            )
+            if fig is not None:
+                individual_plots.append((fig, ax))
                 plt.show()
-    
-    if not individual_plots:
-        print("Warning: No individual plots were created")
-        return None, None, []
+        if not individual_plots:
+            print("Warning: No individual plots were created")
     
     # Create combined figure directly (avoid matplotlib artist copying issues)
     n_labels = len(rare_labels)
