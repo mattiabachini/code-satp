@@ -287,7 +287,7 @@
       "metadata": {},
       "outputs": [],
       "source": [
-        "# Define your multi-label target columns\n",
+        "# Select multi-label target columns \n",
         "stratify_cols = [  \n",
         "    'civilians', 'maoist', 'government_officials', 'security', \n",
         "    'private_property', 'mining_company', 'government_infrastructure', \n",
@@ -618,6 +618,56 @@
       ]
     },
     {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "# Define rare labels for target type classification\n",
+        "TARGET_TYPE_RARE_LABELS = [\n",
+        "    'maoist', 'government_officials', 'mining_company', \n",
+        "    'government_infrastructure', 'non_maoist_armed_group'\n",
+        "]\n",
+        "\n",
+        "# Load the predictions data (this contains the actual predictions for each strategy)\n",
+        "target_predictions_df = load_dataframe_csv('target-type_strategy_predictions.csv', task_name=TASK_NAME)\n",
+        "\n",
+        "print(f\"Loaded predictions data with shape: {target_predictions_df.shape}\")\n",
+        "print(f\"Columns: {list(target_predictions_df.columns)}\")\n",
+        "print(f\"Strategies found: {target_predictions_df['strategy'].unique()}\")\n"
+      ]
+    },
+    {
       "cell_type": "code",
       "execution_count": null,
       "metadata": {},
@@ -640,7 +690,26 @@
       "cell_type": "markdown",
       "metadata": {},
       "source": [
-        "#### 7.3.1 PR Plotting Setup"
+        "#### 7.3.1 Import PR Plotting Functions"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "from utils import (\n",
+        "    create_rare_labels_pr_plot,\n",
+        "    create_rare_labels_comparison_plots\n",
+        ")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "#### 7.3.2 Set Rare Labels and Load Predictions Data"
       ]
     },
     {
@@ -652,8 +721,8 @@
         "# Load the strategy predictions data\n",
         "TASK_NAME = 'target-type'\n",
         "TARGET_TYPE_RARE_LABELS = [\n",
-        "    'mining_company', 'non_maoist_armed_group', 'former_maoist',\n",
-        "    'high_caste_landowner', 'businessman', 'aspiring_politician'\n",
+        "    'government_infrastructure', 'private_property', \n",
+        "    'non_maoist_armed_group', 'mining_company'\n",
         "]\n",
         "\n",
         "# Load the strategy predictions data\n",
@@ -664,7 +733,7 @@
       "cell_type": "markdown",
       "metadata": {},
       "source": [
-        "#### 7.3.2 Create Comprehensive Visualization"
+        "#### 7.3.3 Create Comprehensive Visualization"
       ]
     },
     {
@@ -678,6 +747,7 @@
         "    target_predictions_df,\n",
         "    TASK_NAME,\n",
         "    TARGET_TYPE_RARE_LABELS,\n",
+        "    show_individual=True,  # Show individual plots first\n",
         "    save_path=f\"{get_task_results_dir(TASK_NAME)}/rare_labels_strategy_comparison.png\"\n",
         ")\n",
         "\n",

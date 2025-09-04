@@ -670,7 +670,7 @@ def create_all_rare_labels_plots(predictions_df, task_name, save_dir=None):
     return plots
 
 def create_rare_labels_comparison_plots(predictions_df, task_name, rare_labels, 
-                                       save_path=None, show_individual=True, 
+                                       save_path=None, show_individual=False, 
                                        figsize_individual=(8, 6), figsize_combined=(16, 12)):
     """
     Create one plot per rare label comparing strategies, then combine them into a single figure.
@@ -788,3 +788,20 @@ def create_rare_labels_comparison_plots(predictions_df, task_name, rare_labels,
         print(f"Combined plot saved to: {save_path}")
     
     return combined_fig, combined_axes, individual_plots
+
+def create_rare_labels_comparison_plot(predictions_df, task_name, rare_labels,
+                                       save_path=None, show_individual=False,
+                                       figsize_individual=(8, 6), figsize_combined=(16, 12)):
+    """
+    Backwards-compatible singular alias for create_rare_labels_comparison_plots.
+    Returns the same 3-tuple (combined_fig, combined_axes, individual_plots).
+    """
+    return create_rare_labels_comparison_plots(
+        predictions_df=predictions_df,
+        task_name=task_name,
+        rare_labels=rare_labels,
+        save_path=save_path,
+        show_individual=show_individual,
+        figsize_individual=figsize_individual,
+        figsize_combined=figsize_combined
+    )
