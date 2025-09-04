@@ -210,6 +210,18 @@ def heatmap_label_f1_by_strategy(
     # Pivot so rows=strategies, columns=labels
     pivot = df.pivot(index=strategy_col, columns=label_col, values=value_col)
 
+    # Format column names (labels) to match heatmap_label_f1_scores() formatting
+    formatted_columns = {}
+    for col in pivot.columns:
+        formatted_col = (
+            str(col)
+            .replace("_", " ")
+            .title()
+        )
+        formatted_columns[col] = formatted_col
+    
+    pivot = pivot.rename(columns=formatted_columns)
+
     # Sort columns (labels) by their average F1 across strategies (descending)
     col_order = pivot.mean(axis=0).sort_values(ascending=False).index
     pivot = pivot[col_order]
