@@ -14,7 +14,7 @@ per_label_f1_heatmap <- function(data, title = NULL) {
   
   # Select label-level f1 score columns (exclude averages)
   label_cols <- df_filtered |>
-    select(starts_with("eval_")) |>
+    select(starts_with("test_")) |>
     select(contains("f1_score"), -contains("avg")) |>
     names()
   
@@ -24,7 +24,7 @@ per_label_f1_heatmap <- function(data, title = NULL) {
     pivot_longer(cols = -model_label, names_to = "label_raw", values_to = "f1_score") |>
     mutate(
       label = label_raw |>
-        str_remove("^eval_") |>
+        str_remove("^test_") |>
         str_remove("_f1_score$") |>
         str_replace_all("_", " ") |>
         str_to_title()
@@ -39,8 +39,8 @@ per_label_f1_heatmap <- function(data, title = NULL) {
   
   # Sort models by micro F1 score
   model_order <- df_filtered |>
-    select(model_label, eval_micro_avg_f1_score) |>
-    arrange(eval_micro_avg_f1_score) |>
+    select(model_label, test_micro_avg_f1_score) |>
+    arrange(test_micro_avg_f1_score) |>
     pull(model_label)
   
   # Apply factor ordering

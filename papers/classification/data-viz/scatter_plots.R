@@ -18,8 +18,8 @@ scatter_plot_speed_vs_accuracy <- function(data,
       ) +
     labs(
       title = title,
-      x = str_to_title(str_replace_all(str_remove(as_label(enquo(xcol)), "^eval_"), "_", " ")),
-      y = str_to_title(str_replace_all(str_remove(as_label(enquo(ycol)), "^eval_"), "_", " ")),
+      x = str_to_title(str_replace_all(str_remove(as_label(enquo(xcol)), "^test_"), "_", " ")),
+      y = str_to_title(str_replace_all(str_remove(as_label(enquo(ycol)), "^test_"), "_", " ")),
       color = str_to_title(str_replace_all(as_label(enquo(color)), "_", " ")),
       size  = str_to_title(str_replace_all(as_label(enquo(size)), "_", " "))
     ) +

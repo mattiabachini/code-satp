@@ -12,7 +12,7 @@ per_label_support_barplot <- function(data, title = NULL, label_levels = NULL) {
   
   # Select and reshape support columns
   support_cols <- df_filtered |>
-    select(starts_with("eval_")) |>
+    select(starts_with("test_")) |>
     select(ends_with("_support"), -contains("avg")) |>
     names()
   
@@ -22,7 +22,7 @@ per_label_support_barplot <- function(data, title = NULL, label_levels = NULL) {
     pivot_longer(-model_label, names_to = "label_raw", values_to = "support") |>
     mutate(
       label = label_raw |>
-        str_remove("^eval_") |>
+        str_remove("^test_") |>
         str_remove("_support$") |>
         str_replace_all("_", " ") |>
         str_to_title()

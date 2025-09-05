@@ -1,16 +1,6 @@
 %%% Title Section %%%
 
-
-% \begin{titlepage}
-% \center
-% 
-% % Don't include a newpage before \maketitle
-% {\let\newpage\relax\maketitle}
-% 
-% % Needs to come after \maketitle
-% \thispagestyle{title}
-% 
-
+\newgeometry{top=0.5in, bottom=1in, left=1in, right=1in}
 
 $if(published)$
 $if(code-repo)$
@@ -34,7 +24,7 @@ $endif$
 
 \vspace{0.25in}
 
-% abstract
+%%% Abstract %%%
 
 $if(abstract)$
 \begin{abstract}
@@ -52,22 +42,30 @@ $endif$
 
 \vspace{0.25in}
 
-% word count
+%%% Word Count %%%
 
 $if(word-count)$
 {
-\begin{center} 
-Word Count: $word-count$
+\begin{center}
+\wordcount{$word-count$}
 \end{center}
 }
 $endif$
 
 \vspace{0.25in}
 
-% funding
+%%% Funding %%%
 
-$if(funding)$
-\noindent 
-\textbf{Funding: }$funding$
+$if(funding-info)$
+\noindent
+\fundinginfo{$funding-info$}
 $endif$
 
+%%% Conflicts %%%
+
+$if(conflicts)$
+\noindent
+\conflicts{$conflicts$}
+$endif$
+
+\restoregeometry

@@ -1,56 +1,64 @@
 ---
-title: "Comparing Encoder-Based Models for Event Coding^[Prepared for the Advancing the Use of Computational Tools in Political Science Virtual Research Group, held under the auspices of the 2025 American Political Science Virtual Research Meetings. The authors would like to thank Aravind Chinnari for his help with earlier versions of the models presented in this paper. Our code and data can be accessed at https://github.com/eteitelbaum/code-satp.]"
-subtitle: "Evidence from the South Asia Terrorism Portal"
-author:
-  - name: Emmanuel Teitelbaum^[George Washington University, Department of Political Science]
-  - name: Mohiddin Bacha Shaik^[George Washington University, Data Science Program]
-  - name: Shiva Chakrabarty Sharma^[George Washington University, Trachtenberg School of Public Policy]
-date: today
-date-format: long
+title: | 
+  Comparing Encoder-Based Models for Event Coding
+subtitle: |
+  Evidence from the South Asia Terrorism Portal
+short-title: "Comparing Encoder-Based Models"
+published: "Prepared for the 2025 American Political Science Association Meetings"  
+date: September 5, 2025
+code-repo: "Access the code, data, and analysis at <https://github.com/eteitelbaum/code-satp.git>"
+author: 
+  - name: Emmanuel Teitelbaum
+    email: ejt@gwu.edu
+    orcid: 0000-0001-7089-0588m
+    title: Associate Professor 
+    affiliations:
+      - id: gwu
+        name: George Washington University
+        department: Department of Political Science
+    attributes: 
+      corresponding: true
+  - name: Mohiddin Bacha Shaik
+    email: iammohiddins@gmail.com
+    affiliations:
+      - id: gwu
+        name: George Washington University
+        department: Data Science Program
+  - name: Shiva Chakrabarty Sharma
+    email: shivacsharma@gmail.com
+    affiliations:
+      - id: gwu
+        name: George Washington University
+        department: Trachtenburg School of Public Policy
 abstract: |
-  \vspace{4em}
-  \noindent 
-  \begin{center} 
-  \textit{Early draft. Do not circulate.} \\
-  \vspace{4em}
-  \textbf{Word count}: 3,710
-  \end{center}
-  \newpage{}
-  \begin{center} 
-  \textbf{ABSTRACT}
-  \end{center}
-  \vspace{1em}
-  \noindent \normalsize
-  This paper compares the performance of encoder-based transformer models on a series of conflict-related coding tasks. Using hand-coded data from the South Asia Terrorism Portal (SATP) pertaining to the Maoist insurgency in India, we evaluate six models—BERT, RoBERTa, ELECTRA, DistilBERT, XLNet, and the domain-specific ConfliBERT—across multiple dimensions. Events are annotated with overlapping labels capturing forms of violence and state response, allowing us to assess model performance across label frequency, lexical complexity, and training data availability. We also evaluate inference speed to reflect practical constraints in low-resource academic settings. While ConfliBERT performs well overall, particularly on rare and semantically nuanced labels, RoBERTa matches its accuracy on many tasks and runs at comparable speed. All models perform strongly on frequent, lexically distinctive labels but struggle with rare or adjacent categories. These results highlight the promise of general-purpose open-source models for many annotation tasks, the modest gains from domain-specific pretraining, and the persistent challenges of rare label prediction. We conclude with recommendations for improving classification performance on difficult categories and discuss the broader tradeoffs between model complexity, annotation cost, and workflow design in applied conflict research.
-  \newpage
-#word-count: "8,453"
-number-sections: true
-format:
-  pdf:
-    #documentclass: article
-    toc: false
-    fontsize: 12pt
-    mainfont: Palatino
-    mathfont: STIX Two Math
-    linestretch: 2
-    link-citations: true
-    colorlinks: true
-    linkcolor: Blue4
-    geometry: margin=1in
-    fig-width: 8
-    fig-height: 4
-    include-in-header: header.tex
+  This paper compares encoder-based transformer models on conflict-related coding tasks using hand-coded data from the South Asia Terrorism Portal (SATP) pertaining to the Maoist insurgency in India. We evaluate six models including BERT, RoBERTa, and the domain-specific ConfliBERT across multiple dimensions, assessing performance by label frequency, lexical complexity, and training data availability. We also evaluate inference speed to reflect practical constraints in academic settings. While domain-specific ConfliBERT performs well on rare and semantically nuanced labels, general-purpose models like RoBERTa achieve comparable accuracy on many tasks. All models perform strongly on frequent, lexically distinctive labels but struggle with rare categories in baseline configurations. Through systematic evaluation of six imbalance handling strategies, we demonstrate that targeted interventions—particularly data augmentation—can substantially improve rare label performance. These results highlight the promise of general-purpose open-source models for many annotation tasks, the modest gains from domain-specific pretraining, and effective approaches for addressing rare label challenges. We conclude with recommendations for improving classification performance on difficult categories and discuss broader tradeoffs in applied conflict research.
+# keywords: 
+#   - large language models
+#   - natural language processing
+#   - political violence
+#   - event coding
+#   - text classification
+#   - imbalanced data
+thanks: |
+  We thank Javier Osorio and participants of the Advancing the Use of Computational Tools in Political Science Virtual Research Group Workshop for comments on an earlier draft of this paper.
+funding-info: | 
+  We gratefully acknowledge funding from the Smith Richardson Foundation and in-kind support from the GW Institute for International Economic Policy. 
+#conflicts: |
+#  We have no known conflict of interest to disclose.
+anonymized: false
+#word-count: "5,123"
+format: 
+  working-paper-pdf:
     keep-tex: true
-    #block-headings: false
-execute: 
+  #hikmah-manuscript-docx: default
+  #academic-typst: default
+execute:
   echo: false
   warning: false
-  error: false
+  message: false
 params: 
   reps: 5000
-#reference-section-title: References
 bibliography: nlp-coding.bib
-#thanks: We are grateful to IPSOS and the GW Politics Poll for fielding the surveys analyzed in this paper.
 ---
 
 ```{r}
@@ -80,22 +88,28 @@ source("data-viz/scatter_plots.R")
 source("data-viz/bootstrap_multiclass_macro_f1_plot.R")
 source("data-viz/bootstrap_multiclass_weighted_f1_plot.R")
 source("data-viz/bootstrap_multilabel_f1_plot.R")
+source("data-viz/imbalance_strategy_heatmap.R")
+source("data-viz/rare_labels_pr_plots.R")
 
 # Load and mildly wrangle summary data
 perpetrator_summary <- read_csv("results/perpetrator_summary.csv") |>
   clean_names()
 action_type_summary <- read_csv("results/actiontype_test1_summary.csv") |>
   clean_names() 
-target_type_summary <- read_csv("results/targettype_test2_summary.csv") |>
+target_type_summary <- read_csv("results/targettype_test1_summary.csv") |>
   clean_names()
 
 # Load predictions
 perpetrator_pred <- read_csv("results/perpetrator_predictions.csv")
 action_type_pred <- read_csv("results/actiontype_test1_predictions.csv") 
-target_type_pred <- read_csv("results/targettype_test2_predictions.csv")
+target_type_pred <- read_csv("results/targettype_test1_predictions.csv")
+
+# Load data for imbalance handling strategies
+imbalance_f1 <- read_csv("results/target-type_strategy_f1_long.csv")
+target_predictions <- read_csv("results/target-type_strategy_predictions.csv") 
 ```
 
-## Introduction
+# Introduction
 
 Large language models (LLMs) are rapidly changing how political scientists and conflict researchers analyze unstructured text. Transformer-based architectures now dominate natural language processing (NLP), offering improved performance over traditional methods such as bag-of-words models, dictionaries, and supervised classifiers. These advances have generated enthusiasm for the possibility that LLMs might dramatically reduce the labor involved in annotating political texts, particularly for tasks like sentiment classification, ideology scaling, and structured event coding.
 
@@ -107,15 +121,19 @@ These models have shifted the conversation from whether LLMs are viable for poli
 
 This paper revisits the promise and limits of domain-specific LLMs in the context of a series of conflict-related classification tasks. We use a subset of event descriptions from the South Asia Terrorism Portal (SATP), focusing on the Maoist insurgency in India. Events were hand-coded by researchers using a multi-label taxonomy capturing event type, actor behavior, and modalities of violence. The labels vary in frequency and complexity, ranging from common, lexically distinctive labels like *killing* to more semantically ambiguous ones such as *infrastructure attack*. While the dataset shares many structural features with other conflict datasets—such as GTD, ICEWS, or Polecat—it also reflects includes some relatively niche labels that were specific to the interests of the researchers working on this specific project.
 
-Our study makes several contributions. First, we evaluate and compare several transformer-based models commonly used in political text classification: BERT, DistilBERT, ELECTRA, RoBERTa, XLNet, and the domain-specific ConfliBERT. We examine how model performance varies across labels and training data fractions. Second, we incorporate inference speed into our evaluation. This is an important consideration in academic and low-resource environments where compute budgets are constrained. We find that while ConfliBERT performs best overall, RoBERTa matches its performance on many labels and runs at comparable speed—complicating the argument that domain-specific pretraining is always necessary for strong performance.
+We focus on encoder-based transformer models rather than more recent decoder-only architectures (GPT-4, Claude, etc.) because they remain highly relevant for social science applications despite the recent attention given to larger generative models. Encoder models can be fine-tuned and deployed locally, addressing data sharing concerns and API dependencies that are often problematic when working with sensitive political data. They also offer superior throughput for batch classification tasks at substantially lower computational cost, providing critical advantages for researchers processing large document corpora within typical academic budget constraints. The deterministic, reproducible results that encoder models provide align well with academic replication standards, while their operational simplicity makes them accessible to researchers without extensive technical infrastructure. While decoder-only models show promise for few-shot learning applications, encoder models continue to offer the most practical balance of performance, cost, and control for systematic annotation tasks in social science research contexts.
 
-Third, we assess how models handle lexically complex and low-frequency labels. These are often the very tasks that would be delegated to graduate student coders or domain experts due to their ambiguity or theoretical salience. Our results show that even well-trained models struggle with such categories, and that performance gains are uneven across the label space. While transformer-based models can reliably code frequent and lexically grounded labels with minimal supervision, they remain inconsistent on semantically adjacent or underrepresented categories.
+Our study makes several contributions. First, we evaluate and compare several transformer-based models commonly used in political text classification: BERT, DistilBERT, ELECTRA, RoBERTa, XLNet, and the domain-specific ConfliBERT. We examine how model performance varies across labels and training data fractions. 
+
+Second, we incorporate inference speed into our evaluation. This is an important consideration in academic and low-resource environments where compute budgets are constrained. We find that while ConfliBERT performs best overall, RoBERTa matches its performance on many labels and runs at comparable speed—complicating the argument that domain-specific pretraining is always necessary for good results.
+
+Third, we assess how models handle lexically complex and low-frequency labels, and systematically evaluate six imbalance handling strategies to address performance limitations on rare categories. These are often the very tasks that would be delegated to graduate student coders or domain experts due to their ambiguity or theoretical salience. Our results show that while baseline models struggle with such categories, targeted interventions—particularly data augmentation through back-translation—can achieve substantial improvements, with some rare labels improving from complete failure to reliable performance.
 
 In short, our findings suggest that open-source general-purpose models can be highly effective for a wide range of political coding tasks, including many found in conflict datasets. Domain-specific models like ConfliBERT provide additional accuracy, particularly when label definitions are subtle or data are scarce, but their advantages may be incremental rather than wholly transformative. For many applications—particularly those involving routine coding tasks—open models such as RoBERTa may offer a sufficient balance of speed, accuracy, and accessibility.
 
 The remainder of the paper proceeds as follows. We begin by describing the dataset and coding framework. We then outline the modeling approach, evaluation metrics, and experimental design. Results are presented with attention to model comparisons, error patterns, and performance variation by label type. We conclude with a discussion of implications for future annotation strategies, especially in low-resource research settings, and point to concrete paths for improving model performance on rare and ambiguous labels.
 
-## The SATP Maoist Violence Incidents Dataset
+# The SATP Maoist Violence Incidents Dataset
 
 The South Asia Terrorism Portal (SATP) is a foundational resource for scholars of political violence in South Asia. Its curated event summaries offer one of the most comprehensive, longitudinal collections of open-source conflict data on the region, with particular relevance for research on insurgency, terrorism, and counterinsurgency in India. Recent work in political event classification using large language models (LLMs) has employed SATP as a source of annotated conflict data for supervised learning and model evaluation. @hu2022 used the SATP dataset to test ConfliBERT, a BERT-based model trained on a large corpus of political violence texts, evaluating it on binary classification tasks like identifying whether a report described a violent event and multi-label classification like assigning event types such as armed assault or bombing. @brandt2024 extended this work by comparing ConfliBERT to more recent decoder-based LLMs, using SATP again for illustrative examples while shifting the primary evaluation focus to larger-scale datasets such as the Global Terrorism Database (GTD).
 
@@ -129,7 +147,7 @@ The coding process was characterized by an emphasis on quality control. To ensur
 
 While ConfliBERT and related BERT-based models have shown promising results on classification tasks involving relatively broad event categories, our dataset presents a more varied and nuanced test of LLM capabilities. By coding more finely grained distinctions within a single conflict, we aim to assess how well pretrained models can handle the complexity of political violence data when applied to bespoke annotation schemes. This challenge reflects the reality that researchers working with real-world conflict data often require models that can disaggregate events in ways that reflect local variation, political context, and shifting repertoires of violence. In the following section, we outline the specific tasks we set out to evaluate and compare how our selected models performed on them. 
 
-## Methods
+# Methods
 
 To evaluate how effectively pretrained language models can recover structured political violence data from unstructured text, we implemented a series of classification tasks using our hand-coded SATP Maoist Violence Incidents Dataset. The tasks reflect key dimensions of political violence—actor type, action type, and target type—each operationalized as either multi-class or multi-label classification problems.
 
@@ -156,16 +174,16 @@ Each model was fine-tuned on a fixed training–validation–test split drawn fr
 
 To evaluate model performance, we report weighted macro F1 scores for the multi-class perpetrator classification task and micro F1 scores for the two multi-label classification tasks (action type and target type). These metrics were selected to account for class imbalance while preserving interpretability and comparability across settings. Additional performance metrics, including precision, recall, and per-label F1 scores, will be provided in an online supplement.
 
-## Results
+# Results
 
-### Perpetrator Task
+## Perpetrator Task
 
 The perpetrator task is a multi-class classification problem in which models are trained to predict the actor type responsible for a given incident, with classes including Maoist, Security, and Other. Figure 1a displays the weighted macro F1 scores achieved by each model across different training data fractions. Figure 1b focuses on a single fraction ($1/8$ of the training set), presenting 95% confidence intervals obtained via bootstrap resampling (5,000 iterations) to assess statistical uncertainty around model estimates.
 
 ```{r}
 #| label: perpetrator
 #| fig-cap: "Model Performance for 'Perpetrator' Task"
-#| fit-align: center
+#| fig-align: center
 
 line_chart <- model_performance_plot(
   data = perpetrator_summary,
@@ -179,8 +197,8 @@ line_chart <- model_performance_plot(
 )
 
 f1_ci_plot <- bootstrap_multiclass_weighted_f1_plot(perpetrator_pred,
-                             fraction_value = "12%",
-                             title = "b. CIs at 12% Training",
+                             fraction_value = "25%",
+                             title = "b. CIs at 25% Training",
                              color = "#8337A0",
                              n_boot = params$reps)
 
@@ -198,7 +216,7 @@ Consistent with findings reported in the original ConfliBERT paper [@hu2022], we
 
 When trained on the full dataset, all models converge to very high weighted macro F1 scores, ranging from 0.957 (ConfliBERT) to 0.968 (RoBERTa). This tight clustering in performance likely reflects the relative simplicity of the classification task (predicting whether an actor is Maoist, Security, or Other) and the benefit of high-quality, consistent human annotations. While ConfliBERT retains a slight advantage in low-resource settings, the results at full training suggest that general-purpose encoder models are capable of matching or exceeding the performance of domain-specific alternatives on this task. In a later section, we return to inference speed and other performance trade-offs, which further contextualize these results for applications in low-resource environments.
 
-### Action Type Task
+## Action Type Task
 
 The second task is a multi-label classification problem in which models predict one or more action types associated with a given incident. These include Armed Assault, Bombing, Abduction, Seizure, Arrest, Surrender, and Facility/Infrastructure Attack. Performance is evaluated using micro F1 scores, which are better suited to imbalanced, multi-label settings where many samples carry multiple labels or none at all.
 
@@ -212,7 +230,7 @@ Figure 2a presents model performance across increasing training data fractions. 
 line_chart <- model_performance_plot(
   data = action_type_summary,
   xvar = fraction_raw,
-  yvar = eval_micro_avg_f1_score,
+  yvar = test_micro_avg_f1_score,
   color = model_label,
   title = "a. F1 vs. Training Data Fraction",
   ytitle = "Micro F1 Score",
@@ -270,7 +288,7 @@ combined_plot
 ```
 These headline results, however, mask important variation across action types. As shown in Figure 3, some labels (e.g., Surrender) are predicted with very high accuracy despite low support in the training set, while others (e.g., Facility/Infrastructure Attack) perform less well despite being relatively more common. This suggests that label frequency alone does not fully explain model performance. Certain labels may benefit from linguistic distinctiveness—for example, the word “surrender” appears with few synonyms or paraphrases in the source texts—while others, like infrastructure-related actions, may involve greater lexical ambiguity or more diverse expressions, making them harder to classify.
 
-### Target Type Task
+## Target Type Task
 
 The final task involves predicting one or more target types associated with each incident. As in the action classification task, this is a multi-label setting, and performance is again evaluated using micro F1 scores. Target categories include Security, Civilians, Officials, Government Infrastructure, Private Property, Mining Companies, NGOs, Other Groups, and Maoists.
 
@@ -284,7 +302,7 @@ Figure 4a presents model performance across training fractions, with Figure 4b z
 line_chart <- model_performance_plot(
   data = target_type_summary,
   xvar = fraction_raw,
-  yvar = eval_micro_avg_f1_score,
+  yvar = test_micro_avg_f1_score,
   color = model_label,
   title = "a. F1 vs. Training Data Fraction",
   ytitle = "Micro F1 Score",
@@ -293,8 +311,8 @@ line_chart <- model_performance_plot(
 )
 
 f1_ci_plot <- bootstrap_multilabel_f1_plot(target_type_pred,
-                             fraction_value = "50.0%",
-                             title = "b. CIs at 50% Training",
+                             fraction_value = "25.0%",
+                             title = "b. CIs at 25% Training",
                              color = "#8337A0",
                              n_boot = params$reps)
 
@@ -318,10 +336,11 @@ At full training (Figure 4a, rightmost points), model scores converge somewhat, 
 library(patchwork)
 
 # Create shorter axis labels
-short_labels = c("Maoist", "Security", "Civilians", "Infrastructure", "Property", "Officials", "Mining Co.", "NGOs", "Other Group")
+short_labels = c("Maoist", "No Target", "Security", "Civilians", "Infrastructure", "Property", "Officials", "Mining Co.", "Other Group")
 
 # Generate the heatmap and store the object
-heatmap <- per_label_f1_heatmap(target_type_summary) + scale_x_discrete(labels = short_labels)
+heatmap <- per_label_f1_heatmap(target_type_summary) + 
+  scale_x_discrete(labels = short_labels)
 
 # Extract the label order used in the heatmap
 label_order <- levels(heatmap$data$label) 
@@ -345,7 +364,7 @@ combined_plot
 
 Figure 5 further illustrates this point by breaking down F1 scores across individual labels. Some target types—particularly those with limited support in the training set—show markedly lower performance. However, the decline is not solely attributable to frequency. For example, Surrender in the action task achieved strong scores despite low support, likely due to its lexical distinctiveness. By contrast, Infrastructure/Facility targets underperform even when relatively frequent, suggesting that greater lexical variability and ambiguity in how these targets are described contributes to model error.
 
-### Performance-Speed Tradeoffs
+## Performance-Speed Tradeoffs
 
 Figure 6 presents a performance–speed comparison for the action and target type classification tasks, plotting micro F1 scores against evaluation speed (measured in samples per second). The figure highlights the trade-offs between model accuracy and runtime efficiency, which are especially relevant for researchers working in low-resource or latency-sensitive environments.
 
@@ -358,8 +377,8 @@ library(grid)
 
 action_scatter <- scatter_plot_speed_vs_accuracy(
   data = action_type_summary,
-  xcol = eval_samples_per_second,
-  ycol = eval_micro_avg_f1_score,
+  xcol = test_samples_per_second,
+  ycol = test_micro_avg_f1_score,
   color = model_label,
   size = fraction_raw,
   title = "Action Type"
@@ -378,8 +397,8 @@ action_scatter <- scatter_plot_speed_vs_accuracy(
 
 target_scatter <- scatter_plot_speed_vs_accuracy(
   data = target_type_summary,
-  xcol = eval_samples_per_second,
-  ycol = eval_micro_avg_f1_score,
+  xcol = test_samples_per_second,
+  ycol = test_micro_avg_f1_score,
   color = model_label,
   size = fraction_raw,
   title = "Target Type"
@@ -432,20 +451,109 @@ DistilBERT emerges as the fastest model, running at 267 samples per second, but 
 
 Though Figure 6 focuses on the action and target type tasks, patterns are similar for the perpetrator classification task (not shown). In all cases, the results suggest that RoBERTa and ConfliBERT offer the best balance between accuracy and efficiency, particularly when high throughput is required alongside strong classification performance.
 
-## Conclusion
+# Improving Low-Frequency Label Performance
+
+While our baseline encoder models demonstrated strong performance on frequent target types such as "Maoist," "Security," and "Civilians", they exhibited complete failure on the rarest categories. Specifically, models achieved zero F1 scores for "Mining Company" and "Non-Maoist Armed Group" across all six encoder architectures tested. This pattern reflects the common challenge in conflict event classification in that some of the most operationally significant events such as those involving corporate targets or non-state armed actors often represent the smallest fractions of training.
+
+This class imbalance pattern, while not extreme, creates meaningful challenges for classification performance. In our SATP training dataset, "Mining Company" targets comprise 54 instances (0.7% of training examples) while "Non-Maoist Armed Group" targets appear in 48 instances (0.6% of training examples), compared to 3,583 "Maoist" examples (45.1%) and 1,270 "Civilian" examples (16.0%). Such low-frequency labels create a challenging learning environment where standard loss functions and sampling procedures struggle to develop reliable decision boundaries. 
+
+## Imbalance Handling Strategies
+
+To systematically address these challenges, we implemented six distinct imbalance handling strategies using ConfliBERT as our base model, each targeting different aspects of the class imbalance problem through modifications to loss functions, sampling procedures, or training data augmentation. We selected ConfliBERT for this analysis given its strong performance across the classification tasks explored earlier in this paper and its domain-specific pretraining on conflict-related texts.
+
+**Baseline Strategy.** Our baseline strategy provides a controlled comparison using standard ConfliBERT training procedures with binary cross-entropy loss and default 0.5 prediction thresholds. This baseline leverages ConfliBERT's domain-specific representations while employing conventional training approaches that struggle with class imbalance. All experiments employed comprehensive reproducibility controls, including fixed random seeds (42) across Python, NumPy, PyTorch, and CUDA operations to ensure reliable comparisons across strategies.
+
+**Threshold Tuning.** We tested threshold tuning both as a standalone imbalance handling strategy and integrated it into the five subsequent strategies explored below. As a standalone strategy, threshold tuning represents a computationally efficient strategy requiring no model retraining and therefore serves as an important first-line approach for addressing class imbalance in operational settings. We use macro PR-AUC for checkpoint selection during training to ensure good representations across all classes before applying post-training calibration and threshold optimization. The threshold optimization process then starts with temperature scaling applied to model outputs to improve probability calibration, followed by grid search optimization across threshold values from 0.05 to 0.95 (19 points) to maximize micro-F1 performance on the validation set. 
+
+**Class Weights.** This traditional approach employs inverse frequency weighting within the loss function, computing $\text{weight} = N_{\text{negative}}/N_{\text{positive}}$ for each label and applying these weights via PyTorch's BCEWithLogitsLoss. This conceptually simply method provides a strong baseline for comparison with more sophisticated approaches.
+
+**Weighted Sampling.** The weighted sampling strategy balances training batches through strategic oversampling of underrepresented examples using PyTorch's WeightedRandomSampler. Sample weights are computed as 1 / (label_count + 1), where label_count represents the sum of positive labels per example. This ensures that rare examples appear multiple times per epoch while enabling replacement sampling to maintain batch diversity.
+
+**Focal Loss.** The focal loss strategy addresses class imbalance through a modified loss function that dynamically focuses learning on hard-to-classify examples. We replaced standard binary cross-entropy with focal loss using automatically computed per-label alpha weights: 
+
+$$\alpha_{\text{pos}} = \text{clamp}\left(\sqrt{\frac{\text{median prevalence}}{\text{label prevalence}}}, 0.25, 0.75\right)$$ 
+
+where *median_prevalence* represents the typical frequency across all target types in our dataset, *label_prevalence* is the frequency of the specific target type being weighted, and *clamp* constrains the resulting weight to fall between 0.25 and 0.75 to ensure training stability. This formulation automatically assigns higher weights to rare labels like "Mining Company" (0.7% prevalence) while reducing weights for common labels like "Maoist" (45.1% prevalence). The gamma parameter was set to 2.0 for standard imbalanced labels and boosted to 2.5 for ultra-rare labels (prevalence < 1%). This adaptive parameterization eliminates manual hyperparameter tuning while ensuring appropriate focus on the most challenging examples.
+
+**Back-Translation Augmentation.** Our back-translation strategy generates synthetic training examples for underrepresented categories through translation-based paraphrasing. We employed an automatic threshold-based approach, targeting all labels with fewer than 900 positive training examples to systematically address imbalance across "Mining Company" (54 training examples), "Non-Maoist Armed Group" (48 examples), "Private Property" (509 examples), and "Government Infrastructure" (771 examples). The strategy translates English incident summaries through Hindi, Urdu, and Bengali—languages contextually relevant to South Asian conflict data—before back-translating to English using Google Translate API. Synthetic generation was constrained by safety parameters: a maximum of 500 new examples per label and a synthesis ratio preventing synthetic examples from exceeding original positive counts. The strategy preferentially selects single-label positive examples to minimize label co-occurrence artifacts, effectively doubling training data for the most underrepresented categories while providing controlled expansion for moderately imbalanced labels.
+
+**T5 Paraphrase Augmentation.** This strategy employs Google FLAN-T5-Large for high-quality paraphrase generation under identical threshold-based selection criteria and safety constraints as back-translation. The approach uses structured prompts emphasizing factual preservation and neutral tone, with quality control through similarity filtering using sentence-transformers (all-MiniLM-L6-v2), accepting paraphrases with cosine similarity between 0.85-0.98 to original text. Generation parameters (temperature=0.7, top_p=0.9) ensure semantic consistency while creating meaningful variation. The same label selection and synthesis ratio constraints as back-translation are applied to achieve a balanced augmentation strategy that enhances representation for rare categories without overwhelming the original data distribution.
+
+## Improvements on Low-Frequency Categories
+
+Our imbalance handling strategies achieved transformative improvements on previously unlearnable categories, as illustrated in Figure 7. For example, "Mining Company" targets improved from complete failure (0.00 F1) across all baseline models to substantial performance under weighted sampling (0.625 F1), while "Non-Maoist Armed Group" targets reached 0.857 F1 using back-translation augmentation—representing infinite relative improvement over baseline performance.
+
+```{r}
+#| label: imbalance-handling-heatmap
+#| fig-cap: "Performance of Six Imbalance Handling Strategies"
+#| fig-align: center
+
+# Create shorter x-axis labels
+short_labels = c("Maoist", "No Target", "Security", "Civilians", "Officials", "Infrastructure", "Property", "Other Group", "Mining Co.")
+
+# Generate the heatmap and store the object
+imbalance_strategy_heatmap(imbalance_f1) + 
+  scale_x_discrete(labels = short_labels)
+```
+
+The heatmap reveals distinct strategy profiles across the target type spectrum. Back translation augmentation emerged as the most consistently effective approach, achieving strong performance across both rare categories (Mining Company: 0.50, Non-Maoist Armed Group: 0.857). T5 augmentation demonstrated comparable effectiveness with particularly strong performance on "Government Infrastructure" (0.751) and "Private Property" (0.748) targets.
+
+Weighted sampling showed remarkable effectiveness for "Mining Company" targets (0.625 F1) and solid performance on "Civilians" (0.842), suggesting that oversampling strategies may be particularly valuable for targets with moderate scarcity. Class weights and focal loss provided meaningful but more modest improvements, while threshold tuning alone—despite sophisticated optimization—failed to overcome the fundamental learning challenges posed by extreme class imbalance.
+
+Crucially, these improvements on rare categories were attained without degrading performance on frequent targets. All strategies maintained strong F1 scores above 0.82 for "Security," "Civilians," and "Maoist" categories, indicating that the approaches successfully addressed imbalance without creating negative transfer effects.
+
+## Precision-Recall Tradeoffs in Rare Category Classification
+
+The precision-recall plots for our four target rare categories (Figure 8) illuminate the distinct approaches each strategy takes to the precision-recall optimization problem. These plots reveal that achieving high performance on rare categories requires navigating fundamental tradeoffs between conservative precision and comprehensive recall, with different strategies occupying distinct regions of the precision-recall space.
+
+```{r}
+#| label: PR plots
+#| fig-cap: "Precision-Recall Plots for Imbalance Handling Strategies"
+#| fig-align: center
+
+taskname <- "target_type"
+rare_labels <- c('government_infrastructure', 'private_property', 
+                 'non_maoist_armed_group', 'mining_company')
+
+create_rare_labels_comparison_plots(
+    target_predictions,
+    taskname,
+    rare_labels
+  )
+```
+
+Back-translation augmentation consistently achieves the highest F1 scores (0.72-0.76) across rare categories through well-balanced precision-recall profiles. This balanced approach suggests that high-quality synthetic examples enable models to develop robust decision boundaries that perform reliably across both precision and recall dimensions.
+
+Focal loss demonstrates a precision-specialist profile, garnering perfect precision (1.0) for "Non-Maoist Armed Group" classification while sacrificing recall (~0.5). This pattern aligns with focal loss's theoretical foundation of focusing learning on the hardest examples, and in doing so the model becomes highly conservative but accurate in its positive predictions. This precision-emphasis may be operationally valuable in applications where false positives carry high analytical costs.
+
+Weighted sampling and class weights occupy intermediate positions, suggesting these approaches provide reasonable compromises between precision and recall without strongly favoring either dimension. T5 augmentation shows solid, consistent performance across categories, typically achieving good precision-recall balance albeit with slightly lower overall F1 scores than back-translation.
+
+These precision-recall profiles have important implications for operational deployment. High-precision strategies like focal loss may be preferred when human analysts must review flagged events, as they minimize false positive rates that could overwhelm analytical capacity. Conversely, high-recall approaches may be more appropriate for comprehensive monitoring applications where missing true events carries greater costs than processing false positives. The balanced profiles achieved by augmentation strategies suggest they may be most suitable for general-purpose classification where both precision and recall matter equally.
+
+# Conclusion
 
 This study evaluated the performance of large language models (LLMs) on a multi-label classification task using a subset of hand-coded events from the South Asia Terrorism Portal (SATP) covering the Maoist insurgency in India. The dataset reflects the type of bespoke coding often found in social science research, where events are labeled across multiple dimensions with a custom taxonomy developed for a specific analytical purpose.
 
-Our analysis showed that LLMs performed reasonably well on high-frequency labels, particularly when those labels were lexically distinctive or closely tied to surface-level textual features. For instance, labels like killing and arrest were predicted with relatively high accuracy even with limited training data. As the volume of training data increased, model performance improved overall, but the gains were not evenly distributed across labels.
+Our core analysis showed that LLMs performed reasonably well on high-frequency labels, particularly when those labels were lexically distinctive or closely tied to surface-level textual features. For instance, labels like killing and arrest were predicted with relatively high accuracy even with limited training data. As the volume of training data increased, model performance improved overall, but the gains were not evenly distributed across labels.
 
-Performance on low-frequency labels remained limited, with models often failing to predict these categories reliably. Some labels, such as infrastructure attacks, saw improvements with more training data, but still lagged behind more common categories. We also observed that multi-label performance varied by model and training fraction, suggesting that LLMs are sensitive to both model capacity and data availability in these settings.
+A further analysis of six imbalance handling strategies demonstrates that the low-frequency label challenges identified in our baseline evaluation can be substantially addressed through appropriate methodological interventions. We found that data augmentation approaches—particularly back-translation through contextually relevant languages (Hindi, Urdu, Bengali)—achieved dramatic improvements on previously unlearnable categories, with "Mining Company" targets improving from 0.00 to 0.50 F1 score and "Non-Maoist Armed Group" targets reaching 0.86 F1. These results suggest that the fundamental limitation lies in training data scarcity rather than model architecture, and that high-quality synthetic examples can enable models to develop reliable decision boundaries for rare categories. The success of augmentation strategies has broader implications for social science applications, as the ability to reliably classify low-frequency but analytically important categories like corporate targeting and non-state armed group activity significantly enhances the granularity and value of automated event classification systems.
 
-These findings indicate that LLMs can serve as effective tools for assisting with annotation on certain types of labels—especially those that are frequent and lexically grounded—but remain less reliable for rare or semantically diffuse labels. In practice, this means that LLMs could potentially reduce the human labor required for annotating well-represented event types, while human oversight is still needed for more challenging cases.
+Future research should explore multiple complementary directions to further improve low-frequency label performance. Alternative approaches such as few-shot learning with modern decoder-only models like GPT-4 or Claude Sonnet could potentially achieve strong performance on rare categories without requiring data augmentation, though these methods involve tradeoffs in terms of computational cost, inference speed, and operational complexity compared to fine-tuned encoder models. Additionally, further analysis of model errors could inform refinements to both the coding scheme and the annotation process—for example, identifying which labels are frequently confused may help clarify category definitions or guide the construction of auxiliary tasks to sharpen model distinctions.
 
-Future work should explore strategies for improving performance on the tail of the label distribution. One possibility is oversampling rare labels during training to mitigate class imbalance. Another is data augmentation, including paraphrasing or targeted generation of examples for underrepresented categories. More structured approaches, such as organizing labels hierarchically or embedding them in a continuous space, may also help models generalize across related labels.
+Finally, while this study focused on a single dataset, the challenges it raises are broadly relevant to social scientists considering the use of LLMs for classification tasks. Bespoke annotation schemes and imbalanced label distributions are common features of applied research, and this work contributes initial guidance on where LLMs are likely to be useful and where further development is needed. Our demonstration that both domain-specific pretraining (ConfliBERT) and targeted imbalance handling strategies can substantially improve performance on challenging categories provides a methodological roadmap for researchers facing similar classification challenges. The SATP dataset provides a valuable testbed for continued experimentation with these methods.
 
-In addition, further analysis of model errors could inform refinements to both the coding scheme and the annotation process. For example, identifying which labels are frequently confused may help clarify category definitions or guide the construction of auxiliary tasks to sharpen model distinctions.
 
-Finally, while this study focused on a single dataset, the challenges it raises are broadly relevant to social scientists considering the use of LLMs for classification tasks. Bespoke annotation schemes and imbalanced label distributions are common features of applied research, and this work contributes initial guidance on where LLMs are likely to be useful and where further development is needed. The SATP dataset provides a valuable testbed for continued experimentation with these methods.
+```{=tex}
+\newpage
+```
 
-## References 
+# References {.unnumbered}
+
+```{=tex}
+\setlength{\parindent}{-0.2in}
+\setlength{\leftskip}{0.2in}
+\setlength{\parskip}{8pt}
+\noindent
+```
+
+ 
