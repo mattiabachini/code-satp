@@ -1,0 +1,776 @@
+{
+  "cells": [
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "# SATP Target Type Classification\n",
+        "\n",
+        "This notebook implements multi-label text classification for identifying target types in SATP incidents using transformer models.\n",
+        "\n",
+        "## Notebook Structure\n",
+        "\n",
+        "1. **Setup & Configuration** - Import libraries and configure models\n",
+        "2. **Data Management** - Load, clean, and split data  \n",
+        "3. **Model Components** - Define classes and functions\n",
+        "4. **Training Pipeline** - Run experiments across models and data fractions\n",
+        "5. **Results & Analysis** - Save results and generate visualizations\n",
+        "\n",
+        "## Key Features\n",
+        "- Supports multiple transformer models (BERT, RoBERTa, DistilBERT, etc.)\n",
+        "- Tests performance across different data fractions (3% to 100%)\n",
+        "- Multi-label classification for target types (civilians, government officials, security forces, etc.)\n",
+        "- Comprehensive evaluation with Hamming Loss, Micro F1, and Macro F1 metrics\n",
+        "- Automated result saving and visualization generation"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 1. Setup and Configuration"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 1.1 Environment Setup"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "#### 1.11 Colab Setup"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "collapsed": true,
+        "id": "SmFirNdIMDuz",
+        "outputId": "15395d6b-ff9a-4f63-8319-65b5ec0f0655"
+      },
+      "outputs": [],
+      "source": [
+        "# 1) Mount Drive\n",
+        "from google.colab import drive\n",
+        "drive.mount('/content/drive', force_remount=False)\n",
+        "\n",
+        "# 2) Clone or update the repo\n",
+        "\n",
+        "# Choose branch once per session\n",
+        "BRANCH = \"imbalance-handling-strategies\"  # or \"main\"\n",
+        "\n",
+        "# Clone fresh each session \n",
+        "!rm -rf /content/code-satp\n",
+        "!git clone -b $BRANCH --depth 1 https://github.com/eteitelbaum/code-satp.git /content/code-satp\n",
+        "\n",
+        "# 3) Install dependencies from the cloned repo\n",
+        "!pip install -qU pip setuptools wheel\n",
+        "!pip install -r /content/code-satp/models/classification-models/requirements.txt\n",
+        "\n",
+        "# 4) Make result dirs and add to path\n",
+        "import pathlib\n",
+        "import sys\n",
+        "pathlib.Path(\"/content/drive/MyDrive/colab/satp-results\").mkdir(parents=True, exist_ok=True)\n",
+        "pathlib.Path(\"/content/drive/MyDrive/colab/satp-results/target-type\").mkdir(parents=True, exist_ok=True)\n",
+        "sys.path.append(\"/content/code-satp/models/classification-models\")\n",
+        "\n",
+        "# 5) GPU check\n",
+        "import torch\n",
+        "print(\"GPU:\", torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"CPU\")\n",
+        "\n",
+        "# 6) Set canonical task name for this notebook\n",
+        "TASK_NAME = \"target-type\""
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "#### 1.12 Local Setup"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "# # For local development, uncomment these lines:\n",
+        "# import sys\n",
+        "# sys.path.append('./utils')  # Add utils to path\n",
+        "\n",
+        "# # Local data and results paths\n",
+        "# DATA_PATH = \"../../data/\"\n",
+        "# RESULTS_PATH = \"./results/\"\n",
+        "\n",
+        "# # Create local results directory\n",
+        "# import os\n",
+        "# os.makedirs(RESULTS_PATH, exist_ok=True)\n",
+        "\n",
+        "# # Verify GPU availability\n",
+        "# import torch\n",
+        "# if torch.cuda.is_available():\n",
+        "#     print(f\"✅ GPU Available: {torch.cuda.get_device_name(0)}\")\n",
+        "# else:\n",
+        "#     print(\"⚠️ GPU not available, using CPU\")\n",
+        "\n",
+        "# print(\"✅ Local setup complete!\")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 1.2. Import Libraries"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "# Core libraries\n",
+        "import os\n",
+        "import shutil\n",
+        "import sys\n",
+        "import pandas as pd\n",
+        "from github import Github\n",
+        "\n",
+        "# Machine learning\n",
+        "import torch\n",
+        "from torch.utils.data import Dataset\n",
+        "from sklearn.metrics import classification_report, hamming_loss, accuracy_score\n",
+        "from skmultilearn.model_selection import IterativeStratification\n",
+        "\n",
+        "### Custom ML modules\n",
+        "sys.path.append('./utils')\n",
+        "from utils import (\n",
+        "    create_fixed_splits, \n",
+        "    MultiLabelDataset, \n",
+        "    compute_metrics, \n",
+        "    train_transformer_model, \n",
+        "    run_model_experiments\n",
+        ")\n",
+        "\n",
+        "# Transfomers\n",
+        "from transformers import (\n",
+        "    AutoTokenizer, \n",
+        "    AutoModelForSequenceClassification, \n",
+        "    Trainer, \n",
+        "    TrainingArguments\n",
+        ")\n",
+        "\n",
+        "# Visualization\n",
+        "import matplotlib.pyplot as plt\n",
+        "import seaborn as sns\n",
+        "\n",
+        "### Custom visualization modules\n",
+        "from utils import scatter_plot_speed_vs_accuracy, heatmap_label_f1_scores\n",
+        "\n",
+        "# Set plotting style\n",
+        "plt.style.use('seaborn-v0_8')\n",
+        "sns.set_palette(\"husl\")\n",
+        "\n",
+        "# Unified file I/O helpers\n",
+        "from utils.file_io import (\n",
+        "    save_dataframe_csv, load_dataframe_csv,\n",
+        "    get_task_results_dir, build_filename, normalize_task_name\n",
+        ")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "OqkKKSRA6pO_"
+      },
+      "source": [
+        "## 2. Store Model Names and Labels"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "VKDM9d_36v9N"
+      },
+      "outputs": [],
+      "source": [
+        "# List of Hugging Face model identifiers to evaluate\n",
+        "model_names = [\n",
+        "    \"bert-base-cased\",\n",
+        "    \"snowood1/ConfliBERT-scr-cased\",\n",
+        "    \"FacebookAI/roberta-base\",\n",
+        "    \"distilbert-base-cased\",\n",
+        "    \"xlnet-base-cased\",\n",
+        "    \"google/electra-base-discriminator\"\n",
+        "]\n",
+        "\n",
+        "# Mapping from model name to human-readable label\n",
+        "model_labels = {\n",
+        "    \"bert-base-cased\": \"BERT\",\n",
+        "    \"snowood1/ConfliBERT-scr-cased\": \"ConfliBERT\",\n",
+        "    \"FacebookAI/roberta-base\": \"RoBERTa\",\n",
+        "    \"distilbert-base-cased\": \"DistilBERT\",\n",
+        "    \"xlnet-base-cased\": \"XLNet\",\n",
+        "    \"google/electra-base-discriminator\": \"ELECTRA\"\n",
+        "}"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 3. Create Validation, Test, and Training Sets"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.1 Read in Data"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "# Read data from cloned repository\n",
+        "try:\n",
+        "    data = pd.read_csv('/content/code-satp/data/target_type.csv')\n",
+        "    print(\"✅ Data loaded successfully from cloned repository\")\n",
+        "    print(data.head())\n",
+        "except Exception as e:\n",
+        "    print(f\"❌ Error loading CSV from cloned repo: {e}\")\n",
+        "    print(\"🔧 Fallback: Trying GitHub URL...\")\n",
+        "\n",
+        "# Fallback to GitHub if cloned repo fails or if working locally\n",
+        "url = 'https://raw.githubusercontent.com/eteitelbaum/code-satp/main/data/target_type.csv'\n",
+        "try:\n",
+        "    data = pd.read_csv(url)\n",
+        "    print(\"✅ Data loaded successfully from GitHub\")\n",
+        "    print(data.head())\n",
+        "except Exception as e:\n",
+        "    print(f\"❌ Error loading CSV from GitHub: {e}\")\n",
+        "    "
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.2 Create Data Splits"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "# Select multi-label target columns \n",
+        "stratify_cols = [  \n",
+        "    'civilians', 'maoist', 'government_officials', 'security', \n",
+        "    'private_property', 'mining_company', 'government_infrastructure', \n",
+        "    'non_maoist_armed_group', 'no_target'\n",
+        "]\n",
+        "\n",
+        "# Create fixed splits (once!)\n",
+        "df_train_pool, df_val, df_test = create_fixed_splits(\n",
+        "    df_full=data,\n",
+        "    stratify_cols=stratify_cols,\n",
+        "    test_size=0.1,\n",
+        "    val_size=0.111  # ~10% of original\n",
+        ")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.3 Verify Size of Training, Test and Validation Sets"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "print(\"Total rows:\", len(data))\n",
+        "print(\"Training pool:\", len(df_train_pool))\n",
+        "print(\"Validation set:\", len(df_val))\n",
+        "print(\"Test set:\", len(df_test))"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 3.4 Summarize Support Across Three Sets"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "print(df_train_pool[stratify_cols].sum())\n",
+        "print(df_val[stratify_cols].sum())\n",
+        "print(df_test[stratify_cols].sum())"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "I-6C5C5dcw2Y"
+      },
+      "source": [
+        "## 4. Run the Models"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 4.1 Run Experiments"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "BrPnAJC4xcgg"
+      },
+      "outputs": [],
+      "source": [
+        "test_results_df, test_predictions_df = run_model_experiments(\n",
+        "    df_train_pool, df_val, df_test,\n",
+        "    model_names=model_names,\n",
+        "    model_labels=model_labels,\n",
+        "    stratify_cols=stratify_cols,\n",
+        "    output_csv=\"test_summary.csv\",\n",
+        "    predictions_csv=\"test_predictions.csv\",\n",
+        "    exclusive_label=\"no_target\"\n",
+        ")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 4.2 Save Results"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "# Unified save using helpers\n",
+        "save_dataframe_csv(test_results_df, \"targettype_test1_summary.csv\", task_name=TASK_NAME)\n",
+        "save_dataframe_csv(test_predictions_df, \"targettype_test1_predictions.csv\", task_name=TASK_NAME)"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 4.3 Verify File Creation"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "# List files using Python for portability\n",
+        "import os\n",
+        "print(\"\\n\".join(sorted(os.listdir(get_task_results_dir(TASK_NAME)))))"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Preliminary Analysis"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 5.1 Read in Data"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "df = load_dataframe_csv('targettype_test1_summary.csv', task_name=TASK_NAME)"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 5.2 F1 Micro"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "# Create the plot\n",
+        "plt.figure(figsize=(10, 6))\n",
+        "sns.lineplot(\n",
+        "    data=df,\n",
+        "    x=\"fraction_label\",\n",
+        "    y=\"test_micro avg_f1-score\",\n",
+        "    hue=\"model_label\",\n",
+        "    marker=\"o\",\n",
+        "    palette=\"turbo\"\n",
+        "    )\n",
+        "\n",
+        "# Customize the plot\n",
+        "plt.xlabel(\"Fraction of Data\")\n",
+        "plt.ylabel(\"Micro F1 Score\")\n",
+        "plt.title(\"Model Peformance for 'Action Type' Classification Tasks\")\n",
+        "plt.xticks(rotation=45, ha='right')  # Rotate x-axis labels for better readability\n",
+        "plt.tight_layout()\n",
+        "plt.show()"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 5.3 Heatmap of Individual Labels"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "heatmap_label_f1_scores(\n",
+        "      df=df,\n",
+        "      title=\"F1 Scores for Each Target Type Across Models (100% Data)\",\n",
+        "      note=\"Models sorted by average Micro F1 Score and action type sorted by average label F1 score.\"\n",
+        ")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 5.4 Model Performance vs. Speed"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "scatter_plot_speed_vs_accuracy(\n",
+        "    df=df,\n",
+        "    x_col=\"test_samples_per_second\",\n",
+        "    y_col=\"test_micro avg_f1-score\",\n",
+        "    hue_col=\"model_label\",\n",
+        "    size_col=\"fraction_raw\",\n",
+        "    title=\"Model Performance vs. Speed for 'Action Type' Evaluation Task\"\n",
+        ")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 6. Imbalance Handling Strategies"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 6.1 Setup"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "from utils import run_strategy_experiments, heatmap_label_f1_by_strategy\n",
+        "\n",
+        "MODEL_NAME = \"snowood1/ConfliBERT-scr-cased\"\n",
+        "STRATEGIES = [\n",
+        "  \"baseline\", \"threshold_tuned\", \"focal\", \"class_weights\",\n",
+        "  \"weighted_sampler\", \"augmentation_bt\", \"augmentation_t5\"\n",
+        "]\n",
+        "LABEL_COLS = stratify_cols\n",
+        "RESULTS_FOLDER = \"target-type\""
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 6.2 Run Strategy Sweep"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "pivot, results_long = run_strategy_experiments(\n",
+        "    df_train=df_train_pool,\n",
+        "    df_val=df_val,\n",
+        "    df_test=df_test,\n",
+        "    label_cols=LABEL_COLS,\n",
+        "    model_name=MODEL_NAME,\n",
+        "    strategies=STRATEGIES,\n",
+        "    max_len=512,\n",
+        "    batch_size=16,\n",
+        "    epochs=2,\n",
+        "    results_csv=os.path.join(get_task_results_dir(TASK_NAME), f\"{RESULTS_FOLDER}_strategy_results_long.csv\"),\n",
+        "    predictions_csv=os.path.join(get_task_results_dir(TASK_NAME), f\"{RESULTS_FOLDER}_strategy_predictions.csv\")\n",
+        ")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 6.3 Save Results"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "# Save strategy results using unified helpers\n",
+        "save_dataframe_csv(pivot.reset_index(), f\"{RESULTS_FOLDER}_strategy_f1_pivot.csv\", task_name=TASK_NAME)\n",
+        "save_dataframe_csv(results_long, f\"{RESULTS_FOLDER}_strategy_f1_long.csv\", task_name=TASK_NAME)"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## 7. Visualize Imbalance Handling Strategies"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 7.1 Read in Results"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "df_imbalance = load_dataframe_csv('target-type_strategy_f1_long.csv', task_name=TASK_NAME)"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 7.2 Heatmap of F1 by Label and Strategy"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "# Define rare labels for target type classification\n",
+        "TARGET_TYPE_RARE_LABELS = [\n",
+        "    'maoist', 'government_officials', 'mining_company', \n",
+        "    'government_infrastructure', 'non_maoist_armed_group'\n",
+        "]\n",
+        "\n",
+        "# Load the predictions data (this contains the actual predictions for each strategy)\n",
+        "target_predictions_df = load_dataframe_csv('target-type_strategy_predictions.csv', task_name=TASK_NAME)\n",
+        "\n",
+        "print(f\"Loaded predictions data with shape: {target_predictions_df.shape}\")\n",
+        "print(f\"Columns: {list(target_predictions_df.columns)}\")\n",
+        "print(f\"Strategies found: {target_predictions_df['strategy'].unique()}\")\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "heatmap_label_f1_by_strategy(\n",
+        "    df_imbalance,\n",
+        "    title=f\"F1 by Label vs Imbalance Strategy (ConfliBERT, 100% train) – {RESULTS_FOLDER}\"\n",
+        ")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "### 7.3 Precision-Recall Plots"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "#### 7.3.1 Import PR Plotting Functions"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "from utils import (\n",
+        "    create_rare_labels_pr_plot,\n",
+        "    create_rare_labels_comparison_plots\n",
+        ")"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "#### 7.3.2 Set Rare Labels and Load Predictions Data"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "# Load the strategy predictions data\n",
+        "TASK_NAME = 'target-type'\n",
+        "TARGET_TYPE_RARE_LABELS = [\n",
+        "    'government_infrastructure', 'private_property', \n",
+        "    'non_maoist_armed_group', 'mining_company'\n",
+        "]\n",
+        "\n",
+        "# Load the strategy predictions data\n",
+        "target_predictions_df = load_dataframe_csv('target-type_strategy_predictions.csv', task_name=TASK_NAME)"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "#### 7.3.3 Create Comprehensive Visualization"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": [
+        "# Use the streamlined function\n",
+        "combined_fig, combined_axes, individual_plots = create_rare_labels_comparison_plot(\n",
+        "    target_predictions_df,\n",
+        "    TASK_NAME,\n",
+        "    TARGET_TYPE_RARE_LABELS,\n",
+        "    show_individual=True,  # Show individual plots first\n",
+        "    save_path=f\"{get_task_results_dir(TASK_NAME)}/rare_labels_strategy_comparison.png\"\n",
+        ")\n",
+        "\n",
+        "# The combined figure will show all rare labels in one view\n",
+        "plt.show()"
+      ]
+    }
+  ],
+  "metadata": {
+    "accelerator": "GPU",
+    "colab": {
+      "gpuType": "A100",
+      "machine_shape": "hm",
+      "provenance": []
+    },
+    "kernelspec": {
+      "display_name": "Python 3",
+      "name": "python3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 0
+}

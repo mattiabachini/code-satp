@@ -1,0 +1,8 @@
+# Requirements for count models (Colab-friendly)
+# Avoid installing Colab core packages.
+
+spacy>=3.8,<3.9
+gliner==0.2.10
+gliner-spacy==0.0.10
+
+
