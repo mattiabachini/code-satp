@@ -88,18 +88,19 @@ target_predictions <- read_csv("results/target-type_strategy_predictions.csv")
 ## Protocols for Human Codings
 
 - Grad student supervisor
-- 4-6 undergrads coding in pairs 
-- Events double-coded
+- 4-6 undergrads coding in pairs
 - Structured onboarding
 - Supervised trials
+- Events double-coded
 - Regular meetings to adjudicate edge cases
 - Discrepancies resolved by senior coders
+
 
 ## Classification Tasks
 
 - **Perpetrator/Action Taker**--Maoist, security, other
 - **Action Type**--Armed assault, arrest, abduction, bombing, infrastructure (sabotage), seizure/raid, surrender
-- **Target Type**--Maoist, civilians, security, govt. facility/infrastructure, property, officials, mining co., other amred group, no target
+- **Target Type**--Maoist, civilians, security, govt. facility/infrastructure, property, officials, mining co., other armed group, no target
 
 ## Models Compared {.smaller}
 
@@ -304,6 +305,69 @@ combined_plot <- barplot + heatmap +
 combined_plot
 ```
 
+
+## Handling Imbalanced Labels
+
+- **Threshold Tuning** -- Adjust decision cutoffs
+- **Class Weights** -- Penalize majority class errors  
+- **Weighted Sampling** -- Oversample minority classes
+- **Focal Loss** -- Focus learning on difficult/rare examples
+- **Back Translation** -- Synthetic data via translation
+- **T5 Augmentation** -- Synthetic examples using T5 model
+
+##
+
+```{r}
+#| label: imbalance-handling-heatmap
+#| fig-align: center
+
+# Create shorter x-axis labels
+short_labels = c("Maoist", "No Target", "Security", "Civilians", "Officials", "Infrastructure", "Property", "Other Group", "Mining Co.")
+
+# Generate the heatmap and store the object
+imbalance_strategy_heatmap(imbalance_f1) + 
+  scale_x_discrete(labels = short_labels) +
+  plot_annotation(
+    title = "Performance of Six Imbalance Handling Strategies",
+    #caption = "The size of the points indicates the fraction of data used for training.",
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),  
+      plot.caption = element_text(margin = margin(t = 10))
+    )
+  )
+```
+
+## Precision-Recall Tradeoffs
+
+- **High-Precision Approaches:** Minimize false positives (reduces analyst workload but risks missing true events)
+- **High-Recall Approaches:** Prioritize comprehensive event capture for monitoring applications where missing critical incidents carries high costs
+- **Balanced Strategies**: Optimize for general-purpose classification when both false positives and false negatives impose significant operational costs
+
+## 
+
+```{r}
+#| label: PR plots
+#| fig-align: center
+
+taskname <- "target_type"
+rare_labels <- c('government_infrastructure', 'private_property', 
+                 'non_maoist_armed_group', 'mining_company')
+
+create_rare_labels_comparison_plots(
+    target_predictions,
+    taskname,
+    rare_labels
+  ) +
+  plot_annotation(
+    title = "Precision-Recall Plots for Imbalance Handling Strategies",
+    #caption = "The size of the points indicates the fraction of data used for training.",
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),  
+      plot.caption = element_text(margin = margin(t = 10))
+    )
+  )
+```
+
 ##
 
 ```{r}
@@ -381,80 +445,18 @@ grid.draw(combined_speed_plot)
 grid.text("Evaluation Samples Per Second", y = unit(0.02, "npc"), gp = gpar(fontsize = 12))
 ```
 
-## Handling Imbalanced Labels
-
-- **Threshold Tuning** -- Adjust decision cutoffs
-- **Class Weights** -- Penalize majority class errors  
-- **Weighted Sampling** -- Oversample minority classes
-- **Focal Loss** -- Focus learning on difficult/rare examples
-- **Back Translation** -- Synthetic data via translation
-- **T5 Augmentation** -- Synthetic examples using T5 model
-
-##
-
-```{r}
-#| label: imbalance-handling-heatmap
-#| fig-align: center
-
-# Create shorter x-axis labels
-short_labels = c("Maoist", "No Target", "Security", "Civilians", "Officials", "Infrastructure", "Property", "Other Group", "Mining Co.")
-
-# Generate the heatmap and store the object
-imbalance_strategy_heatmap(imbalance_f1) + 
-  scale_x_discrete(labels = short_labels) +
-  plot_annotation(
-    title = "Performance of Six Imbalance Handling Strategies",
-    #caption = "The size of the points indicates the fraction of data used for training.",
-    theme = theme(
-      plot.title = element_text(hjust = 0.5, face = "bold"),  
-      plot.caption = element_text(margin = margin(t = 10))
-    )
-  )
-```
-
-## Precision-Recall Tradeoffs
-
-- **High-Precision Approaches:** Minimize false positives (reduces analyst workload but risks missing true events)
-- **High-Recall Approaches:** Prioritize comprehensive event capture for monitoring applications where missing critical incidents carries high costs
-- **Balanced Strategies**: Optimize for general-purpose classification when both false positives and false negatives impose significant operational costs
-
-## 
-
-```{r}
-#| label: PR plots
-#| fig-align: center
-
-taskname <- "target_type"
-rare_labels <- c('government_infrastructure', 'private_property', 
-                 'non_maoist_armed_group', 'mining_company')
-
-create_rare_labels_comparison_plots(
-    target_predictions,
-    taskname,
-    rare_labels
-  ) +
-  plot_annotation(
-    title = "Precision-Recall Plots for Imbalance Handling Strategies",
-    #caption = "The size of the points indicates the fraction of data used for training.",
-    theme = theme(
-      plot.title = element_text(hjust = 0.5, face = "bold"),  
-      plot.caption = element_text(margin = margin(t = 10))
-    )
-  )
-```
-
 ## Summary of Findings
 
-- **Encoder Advantage:** Fine-tuned encoders offer good balance of performance, cost, and control
-- **Frequency Bias:** Encoders excel at common events but fail on rare, analytically crucial categories
-- **Imbalance Solutions:** Standard imbalance handling improves rare category performance
-- **Data, Not Models:** Limitations stem from training scarcity and lexical complexity rather than model architecture
+- **Encoder Advantage:** Fine-tuned encoders offer good balance of performance, cost, control and efficiency
+- **Model Performance:** Roberta and ConfliBERT provide best balance of speed and accuracy
+- **Limitations:** Encoders excel at common events but struggle with some rare or lexically complex ones
+- **Imbalance Solutions:** Standard imbalance handling can substantially improve rare category performance, but there are tradeoffs in terms of precision and recall
 
 ## Future Research
 
-- **Decoder-Only Models:** Test few-shot learning with GPT-4/Claude for rare categories
 - **Error Analysis:** Study confusion patterns to refine coding schemes and category definitions
 - **Cross-Dataset Validation:**Test imbalance strategies across multiple conflict datasets
+- **Decoder-Only Models:** Test few-shot learning with GPT-4/Claude for rare categories
 - **Hybrid Approaches:** Combine encoder efficiency with decoder sophistication for rare events
 
 ## Comments?

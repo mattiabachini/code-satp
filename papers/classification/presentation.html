@@ -178,9 +178,9 @@ Shiva Chakrabarty Sharma
 <ul>
 <li>Grad student supervisor</li>
 <li>4-6 undergrads coding in pairs</li>
-<li>Events double-coded</li>
 <li>Structured onboarding</li>
 <li>Supervised trials</li>
+<li>Events double-coded</li>
 <li>Regular meetings to adjudicate edge cases</li>
 <li>Discrepancies resolved by senior coders</li>
 </ul>
@@ -190,7 +190,7 @@ Shiva Chakrabarty Sharma
 <ul>
 <li><strong>Perpetrator/Action Taker</strong>–Maoist, security, other</li>
 <li><strong>Action Type</strong>–Armed assault, arrest, abduction, bombing, infrastructure (sabotage), seizure/raid, surrender</li>
-<li><strong>Target Type</strong>–Maoist, civilians, security, govt. facility/infrastructure, property, officials, mining co., other amred group, no target</li>
+<li><strong>Target Type</strong>–Maoist, civilians, security, govt. facility/infrastructure, property, officials, mining co., other armed group, no target</li>
 </ul>
 </section>
 <section id="models-compared" class="slide level2 smaller">
@@ -263,10 +263,6 @@ Shiva Chakrabarty Sharma
 <h2></h2>
 
 <img data-src="presentation_files/figure-revealjs/target_type_labels-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"></section>
-<section id="section-5" class="slide level2">
-<h2></h2>
-
-<img data-src="presentation_files/figure-revealjs/performance_vs_speed-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"></section>
 <section id="handling-imbalanced-labels" class="slide level2">
 <h2>Handling Imbalanced Labels</h2>
 <ul>
@@ -279,7 +275,7 @@ Shiva Chakrabarty Sharma
 <li><strong>T5 Augmentation</strong> – Synthetic examples using T5 model</li>
 </ul>
 </section>
-<section id="section-6" class="slide level2">
+<section id="section-5" class="slide level2">
 <h2></h2>
 
 <img data-src="presentation_files/figure-revealjs/imbalance-handling-heatmap-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"></section>
@@ -291,25 +287,29 @@ Shiva Chakrabarty Sharma
 <li><strong>Balanced Strategies</strong>: Optimize for general-purpose classification when both false positives and false negatives impose significant operational costs</li>
 </ul>
 </section>
-<section id="section-7" class="slide level2">
+<section id="section-6" class="slide level2">
 <h2></h2>
 
 <img data-src="presentation_files/figure-revealjs/PR%20plots-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"></section>
+<section id="section-7" class="slide level2">
+<h2></h2>
+
+<img data-src="presentation_files/figure-revealjs/performance_vs_speed-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"></section>
 <section id="summary-of-findings" class="slide level2">
 <h2>Summary of Findings</h2>
 <ul>
-<li><strong>Encoder Advantage:</strong> Fine-tuned encoders offer good balance of performance, cost, and control</li>
-<li><strong>Frequency Bias:</strong> Encoders excel at common events but fail on rare, analytically crucial categories</li>
-<li><strong>Imbalance Solutions:</strong> Standard imbalance handling improves rare category performance</li>
-<li><strong>Data, Not Models:</strong> Limitations stem from training scarcity and lexical complexity rather than model architecture</li>
+<li><strong>Encoder Advantage:</strong> Fine-tuned encoders offer good balance of performance, cost, control and efficiency</li>
+<li><strong>Model Performance:</strong> Roberta and ConfliBERT provide best balance of speed and accuracy</li>
+<li><strong>Limitations:</strong> Encoders excel at common events but struggle with some rare or lexically complex ones</li>
+<li><strong>Imbalance Solutions:</strong> Standard imbalance handling can substantially improve rare category performance, but there are tradeoffs in terms of precision and recall</li>
 </ul>
 </section>
 <section id="future-research" class="slide level2">
 <h2>Future Research</h2>
 <ul>
-<li><strong>Decoder-Only Models:</strong> Test few-shot learning with GPT-4/Claude for rare categories</li>
 <li><strong>Error Analysis:</strong> Study confusion patterns to refine coding schemes and category definitions</li>
 <li><strong>Cross-Dataset Validation:</strong>Test imbalance strategies across multiple conflict datasets</li>
+<li><strong>Decoder-Only Models:</strong> Test few-shot learning with GPT-4/Claude for rare categories</li>
 <li><strong>Hybrid Approaches:</strong> Combine encoder efficiency with decoder sophistication for rare events</li>
 </ul>
 </section>
