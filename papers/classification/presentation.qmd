@@ -39,8 +39,8 @@ library(here)
 library(janitor)
 library(patchwork)
 
-# Declare location of manuscript
-here::i_am("satp-classification.qmd")
+# Declare location of presentation
+here::i_am("presentation.qmd")
 
 # Load custom functions
 source("data-viz/model_performance_plots.R")
@@ -50,45 +50,33 @@ source("data-viz/scatter_plots.R")
 source("data-viz/bootstrap_multiclass_macro_f1_plot.R")
 source("data-viz/bootstrap_multiclass_weighted_f1_plot.R")
 source("data-viz/bootstrap_multilabel_f1_plot.R")
+source("data-viz/imbalance_strategy_heatmap.R")
+source("data-viz/rare_labels_pr_plots.R")
 
 # Load and mildly wrangle summary data
 perpetrator_summary <- read_csv("results/perpetrator_summary.csv") |>
   clean_names()
 action_type_summary <- read_csv("results/actiontype_test1_summary.csv") |>
   clean_names() 
-target_type_summary <- read_csv("results/targettype_test2_summary.csv") |>
+target_type_summary <- read_csv("results/targettype_test1_summary.csv") |>
   clean_names()
 
 # Load predictions
 perpetrator_pred <- read_csv("results/perpetrator_predictions.csv")
 action_type_pred <- read_csv("results/actiontype_test1_predictions.csv") 
-target_type_pred <- read_csv("results/targettype_test2_predictions.csv")
+target_type_pred <- read_csv("results/targettype_test1_predictions.csv")
+
+# Load data for imbalance handling strategies
+imbalance_f1 <- read_csv("results/target-type_strategy_f1_long.csv")
+target_predictions <- read_csv("results/target-type_strategy_predictions.csv") 
 ```
 
-## Background
+## Overview
 
-- Paper comes out of convergence of interests
-  - Maoist insurgency in India 
-  - Machine coding of political events 
+- Focus: Maoist insurgency in India 
 - Data set of 10k hand-coded events from SATP over 2005-2016
-- Wanted to try coding with transformer models
-- Possibly set up CICD pipeline for visualization
-
-## What is Unique About our Data?
-
-- Narrower focus on Maoist insurgency in India
-- Reflective of more bespoke datasets 
-- Includes more niche labels you would hire a human coder for
-  - Rare event types
-  - Lexical complexity (labels and descriptions) 
-- To what extent can LLMs replace human coders at these coding tasks?
-
-## This Paper
-
-- Focus on classification tasks
-- Fine-tune BERT-based LLMs
-- See how they do in relation to a domain-specific model (ConfliBERT)
-- Compare in terms of performance and speed
+- Charactersitic of bespoke datasets with niche labels and lexical complexity that we find in regional and conflict studies
+- Wanted to see how much we could autocode with fine tuned, low-cost, open source encoder models (e.g. BERT)
 
 ## Data: South Asia Terrorism Portal (SATP)
 
@@ -97,7 +85,7 @@ target_type_pred <- read_csv("results/targettype_test2_predictions.csv")
 
 ![](images/satp-summary.png)
 
-## Quality control
+## Protocols for Human Codings
 
 - Grad student supervisor
 - 4-6 undergrads coding in pairs 
@@ -107,40 +95,46 @@ target_type_pred <- read_csv("results/targettype_test2_predictions.csv")
 - Regular meetings to adjudicate edge cases
 - Discrepancies resolved by senior coders
 
-## Coding Tasks
+## Classification Tasks
 
 - **Perpetrator/Action Taker**--Maoist, security, other
 - **Action Type**--Armed assault, arrest, abduction, bombing, infrastructure (sabotage), seizure/raid, surrender
-- **Target Type**--Maoist, civilian, security, govt. facility/infrastructure, property, officials, mining co., NGO, other
+- **Target Type**--Maoist, civilians, security, govt. facility/infrastructure, property, officials, mining co., other amred group, no target
 
 ## Models Compared {.smaller}
 
-- **BERT**: 12-layer, 110M; masked language modeling
-- **DistilBERT**: 6-layer, 66M; faster, lighter BERT
-- **RoBERTa**: 12-layer, 125M; more data, no NSP
-- **ELECTRA**: 12-layer, 110M; replaced token detection
-- **XLNet**: 12-layer, 110M; permutation-based autoregressive model
-- **ConfliBERT**: Domain-specific BERT for political conflict
+- **BERT:** 12-layer, 110M; masked language modeling
+- **DistilBERT:** 6-layer, 66M; faster, lighter BERT
+- **RoBERTa:** 12-layer, 125M; more data, no NSP
+- **ELECTRA:** 12-layer, 110M; replaced token detection
+- **XLNet:** 12-layer, 110M; permutation-based autoregressive model
+- **ConfliBERT:** Domain-specific BERT for political conflict
 
 <br>
 *When there was a choice, we used the cased versions of these models. For ConfliBERT, we used scr-cased.*
+
+## Research Questions
+
+- To what extent can encoder models replace humans at our coding tasks?
+- How many examples do you need for accurate codings? 
+- How do encoders trade off in terms of speed and accuracy? 
+- How best to deal with rare labels? 
 
 ## Modeling Strategy
 
 - **Perpetrator Type**: Multiclass classification  
 - **Action Type** & **Target Type**: Multilabel classification  
+- Models evaluated using **fixed validation and test sets** (~1,000 records each) with stratified sampling across labels
 - Focused on:
-  - **Weighted F1** for multiclass (to address class imbalance)
-  - **Micro F1** for multilabel (captures overall performance)  
-- Models evaluated using **fixed validation and test sets** (~1,000 records each)  
-  - Constructed using stratified sampling across labels
+  - **Weighted F1** for multiclass
+  - **Micro F1** for multilabel
 
 ## Training Strategy
 
 - Remaining data used for training  
 - We evaluate model performance at increasing training sizes:
   - 1/32, 1/16, 1/8, 1/4, 1/2, and full training set
-- This allows us to observe performance trends as data scales  
+- Allows us to observe performance trends as data scales  
 - For each iteration, one random seed to select stratified samples from the training set
 
 ##
@@ -161,8 +155,8 @@ line_chart <- model_performance_plot(
 )
 
 f1_ci_plot <- bootstrap_multiclass_weighted_f1_plot(perpetrator_pred,
-                             fraction_value = "12%",
-                             title = "b. CIs at 12% Training",
+                             fraction_value = "25%",
+                             title = "b. CIs at 25% Training",
                              color = "#8337A0",
                              n_boot = params$reps)
 
@@ -186,7 +180,7 @@ combined_plot
 line_chart <- model_performance_plot(
   data = action_type_summary,
   xvar = fraction_raw,
-  yvar = eval_micro_avg_f1_score,
+  yvar = test_micro_avg_f1_score,
   color = model_label,
   title = "a. F1 vs. Training Data Fraction",
   ytitle = "Micro F1 Score",
@@ -251,7 +245,7 @@ combined_plot
 line_chart <- model_performance_plot(
   data = target_type_summary,
   xvar = fraction_raw,
-  yvar = eval_micro_avg_f1_score,
+  yvar = test_micro_avg_f1_score,
   color = model_label,
   title = "a. F1 vs. Training Data Fraction",
   ytitle = "Micro F1 Score",
@@ -260,8 +254,8 @@ line_chart <- model_performance_plot(
 )
 
 f1_ci_plot <- bootstrap_multilabel_f1_plot(target_type_pred,
-                             fraction_value = "50.0%",
-                             title = "b. CIs at 50% Training",
+                             fraction_value = "25.0%",
+                             title = "b. CIs at 25% Training",
                              color = "#8337A0",
                              n_boot = params$reps)
 
@@ -285,7 +279,7 @@ combined_plot
 library(patchwork)
 
 # Create shorter axis labels
-short_labels = c("Maoist", "Security", "Civilians", "Infrastructure", "Property", "Officials", "Mining Co.", "NGOs", "Other Group")
+short_labels = c("Maoist", "No Target", "Security", "Civilians", "Infrastructure", "Property", "Officials", "Mining Co.", "Other Group")
 
 # Generate the heatmap and store the object
 heatmap <- per_label_f1_heatmap(target_type_summary) + scale_x_discrete(labels = short_labels)
@@ -320,8 +314,8 @@ library(grid)
 
 action_scatter <- scatter_plot_speed_vs_accuracy(
   data = action_type_summary,
-  xcol = eval_samples_per_second,
-  ycol = eval_micro_avg_f1_score,
+  xcol = test_samples_per_second,
+  ycol = test_micro_avg_f1_score,
   color = model_label,
   size = fraction_raw,
   title = "Action Type"
@@ -340,8 +334,8 @@ action_scatter <- scatter_plot_speed_vs_accuracy(
 
 target_scatter <- scatter_plot_speed_vs_accuracy(
   data = target_type_summary,
-  xcol = eval_samples_per_second,
-  ycol = eval_micro_avg_f1_score,
+  xcol = test_samples_per_second,
+  ycol = test_micro_avg_f1_score,
   color = model_label,
   size = fraction_raw,
   title = "Target Type"
@@ -376,7 +370,7 @@ combined_speed_plot <- combined_speed_plot +
     title = "Model Performance vs. Speed for Multi-label Classification Tasks",
     #caption = "The size of the points indicates the fraction of data used for training.",
     theme = theme(
-      plot.title = element_text(hjust = 0.5, face = "bold"),  # affects only the annotation title
+      plot.title = element_text(hjust = 0.5, face = "bold"),  
       plot.caption = element_text(margin = margin(t = 10))
     )
   )
@@ -387,27 +381,81 @@ grid.draw(combined_speed_plot)
 grid.text("Evaluation Samples Per Second", y = unit(0.02, "npc"), gp = gpar(fontsize = 12))
 ```
 
-## Summary of Results
+## Handling Imbalanced Labels
 
-- All of the models end up with relatively similar (and high) F1 scores with 100% of the training data
-- With lower amounts of data, ConfliBERT outperforms BERT, DistilBERT and ELECTRA, but is matched by RoBERTa and XLNet
-- ConfliBERT and RoBERTa are much faster than XLNet
-- Models perform well with commonly represented and simple labels, but struggle with rare and lexically complex ones
+- **Threshold Tuning** -- Adjust decision cutoffs
+- **Class Weights** -- Penalize majority class errors  
+- **Weighted Sampling** -- Oversample minority classes
+- **Focal Loss** -- Focus learning on difficult/rare examples
+- **Back Translation** -- Synthetic data via translation
+- **T5 Augmentation** -- Synthetic examples using T5 model
+
+##
+
+```{r}
+#| label: imbalance-handling-heatmap
+#| fig-align: center
+
+# Create shorter x-axis labels
+short_labels = c("Maoist", "No Target", "Security", "Civilians", "Officials", "Infrastructure", "Property", "Other Group", "Mining Co.")
+
+# Generate the heatmap and store the object
+imbalance_strategy_heatmap(imbalance_f1) + 
+  scale_x_discrete(labels = short_labels) +
+  plot_annotation(
+    title = "Performance of Six Imbalance Handling Strategies",
+    #caption = "The size of the points indicates the fraction of data used for training.",
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),  
+      plot.caption = element_text(margin = margin(t = 10))
+    )
+  )
+```
+
+## Precision-Recall Tradeoffs
+
+- **High-Precision Approaches:** Minimize false positives (reduces analyst workload but risks missing true events)
+- **High-Recall Approaches:** Prioritize comprehensive event capture for monitoring applications where missing critical incidents carries high costs
+- **Balanced Strategies**: Optimize for general-purpose classification when both false positives and false negatives impose significant operational costs
+
+## 
+
+```{r}
+#| label: PR plots
+#| fig-align: center
+
+taskname <- "target_type"
+rare_labels <- c('government_infrastructure', 'private_property', 
+                 'non_maoist_armed_group', 'mining_company')
+
+create_rare_labels_comparison_plots(
+    target_predictions,
+    taskname,
+    rare_labels
+  ) +
+  plot_annotation(
+    title = "Precision-Recall Plots for Imbalance Handling Strategies",
+    #caption = "The size of the points indicates the fraction of data used for training.",
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),  
+      plot.caption = element_text(margin = margin(t = 10))
+    )
+  )
+```
+
+## Summary of Findings
+
+- **Encoder Advantage:** Fine-tuned encoders offer good balance of performance, cost, and control
+- **Frequency Bias:** Encoders excel at common events but fail on rare, analytically crucial categories
+- **Imbalance Solutions:** Standard imbalance handling improves rare category performance
+- **Data, Not Models:** Limitations stem from training scarcity and lexical complexity rather than model architecture
 
 ## Future Research
 
-- Synthetic data
-  - Confli-T5
-- Oversample rare labels
-- Try other variants of ConfliBERT
-- Other suggestions?
-
-## Reflections
-
-- Probably want to keep human coders on hand for some tasks
-- All things equal, use the domain-specific model
-- But also nice that you get good performance with general-purpose models
-- ConfliRoBERTa?
+- **Decoder-Only Models:** Test few-shot learning with GPT-4/Claude for rare categories
+- **Error Analysis:** Study confusion patterns to refine coding schemes and category definitions
+- **Cross-Dataset Validation:**Test imbalance strategies across multiple conflict datasets
+- **Hybrid Approaches:** Combine encoder efficiency with decoder sophistication for rare events
 
 ## Comments?
 
@@ -423,7 +471,7 @@ We look forward to your feedback...
 :::
 
 ::: {.column width="50%"}
-{{< qrcode https://eteitelbaum.quarto.pub/code-satp-presi/ width=400 height=400 colorDark='#00264A'>}}
+{{< qrcode https://eteitelbaum.quarto.pub/code-satp-presi/ width=400 height=400 colorDark='#00264A' >}}
 :::
 
 :::

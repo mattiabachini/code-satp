@@ -6,14 +6,14 @@
 <script src="presentation_files/libs/quarto-html/tippy.umd.min.js"></script>
 <link href="presentation_files/libs/quarto-html/tippy.css" rel="stylesheet">
 <link href="presentation_files/libs/quarto-html/light-border.css" rel="stylesheet">
-<link href="presentation_files/libs/quarto-html/quarto-syntax-highlighting-dark-c374e8903e699ee474c14b9fa33e2f95.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="presentation_files/libs/quarto-html/quarto-syntax-highlighting-dark-8ef56b68f8fa1e9d2ba328e99e439f80.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="presentation_files/libs/quarto-contrib/qrcodejs-v1.0.0/qrcode.js"></script><meta charset="utf-8">
-  <meta name="generator" content="quarto-1.7.11">
+  <meta name="generator" content="quarto-1.7.31">
 
   <meta name="author" content="Emmanuel Teitelbaum">
   <meta name="author" content="Mohiddin Bacha Shaik">
   <meta name="author" content="Shiva Chakrabarty Sharma">
-  <meta name="dcterms.date" content="2025-04-11">
+  <meta name="dcterms.date" content="2025-09-13">
   <title>Comparing Encoder-Based Models for Event Coding</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -33,7 +33,7 @@
       vertical-align: middle;
     }
   </style>
-  <link rel="stylesheet" href="presentation_files/libs/revealjs/dist/theme/quarto-c75426deaa6f55de9063c0b32c9cb34b.css">
+  <link rel="stylesheet" href="presentation_files/libs/revealjs/dist/theme/quarto-fb7ba37536780e79afe0ec2445f8f491.css">
   <link href="presentation_files/libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
   <link href="presentation_files/libs/revealjs/plugin/reveal-menu/menu.css" rel="stylesheet">
   <link href="presentation_files/libs/revealjs/plugin/reveal-menu/quarto-menu.css" rel="stylesheet">
@@ -154,41 +154,15 @@ Shiva Chakrabarty Sharma
 </div>
 </div>
 
-  <p class="date">April 11, 2025</p>
+  <p class="date">September 13, 2025</p>
 </section>
-<section id="background" class="slide level2">
-<h2>Background</h2>
+<section id="overview" class="slide level2">
+<h2>Overview</h2>
 <ul>
-<li>Paper comes out of convergence of interests
-<ul>
-<li>Maoist insurgency in India</li>
-<li>Machine coding of political events</li>
-</ul></li>
+<li>Focus: Maoist insurgency in India</li>
 <li>Data set of 10k hand-coded events from SATP over 2005-2016</li>
-<li>Wanted to try coding with transformer models</li>
-<li>Possibly set up CICD pipeline for visualization</li>
-</ul>
-</section>
-<section id="what-is-unique-about-our-data" class="slide level2">
-<h2>What is Unique About our Data?</h2>
-<ul>
-<li>Narrower focus on Maoist insurgency in India</li>
-<li>Reflective of more bespoke datasets</li>
-<li>Includes more niche labels you would hire a human coder for
-<ul>
-<li>Rare event types</li>
-<li>Lexical complexity (labels and descriptions)</li>
-</ul></li>
-<li>To what extent can LLMs replace human coders at these coding tasks?</li>
-</ul>
-</section>
-<section id="this-paper" class="slide level2">
-<h2>This Paper</h2>
-<ul>
-<li>Focus on classification tasks</li>
-<li>Fine-tune BERT-based LLMs</li>
-<li>See how they do in relation to a domain-specific model (ConfliBERT)</li>
-<li>Compare in terms of performance and speed</li>
+<li>Charactersitic of bespoke datasets with niche labels and lexical complexity that we find in regional and conflict studies</li>
+<li>Wanted to see how much we could autocode with fine tuned, low-cost, open source encoder models (e.g.&nbsp;BERT)</li>
 </ul>
 </section>
 <section id="data-south-asia-terrorism-portal-satp" class="slide level2">
@@ -199,8 +173,8 @@ Shiva Chakrabarty Sharma
 </ul>
 
 <img data-src="images/satp-summary.png" class="r-stretch"></section>
-<section id="quality-control" class="slide level2">
-<h2>Quality control</h2>
+<section id="protocols-for-human-codings" class="slide level2">
+<h2>Protocols for Human Codings</h2>
 <ul>
 <li>Grad student supervisor</li>
 <li>4-6 undergrads coding in pairs</li>
@@ -211,25 +185,34 @@ Shiva Chakrabarty Sharma
 <li>Discrepancies resolved by senior coders</li>
 </ul>
 </section>
-<section id="coding-tasks" class="slide level2">
-<h2>Coding Tasks</h2>
+<section id="classification-tasks" class="slide level2">
+<h2>Classification Tasks</h2>
 <ul>
 <li><strong>Perpetrator/Action Taker</strong>–Maoist, security, other</li>
 <li><strong>Action Type</strong>–Armed assault, arrest, abduction, bombing, infrastructure (sabotage), seizure/raid, surrender</li>
-<li><strong>Target Type</strong>–Maoist, civilian, security, govt. facility/infrastructure, property, officials, mining co., NGO, other</li>
+<li><strong>Target Type</strong>–Maoist, civilians, security, govt. facility/infrastructure, property, officials, mining co., other amred group, no target</li>
 </ul>
 </section>
 <section id="models-compared" class="slide level2 smaller">
 <h2>Models Compared</h2>
 <ul>
-<li><strong>BERT</strong>: 12-layer, 110M; masked language modeling</li>
-<li><strong>DistilBERT</strong>: 6-layer, 66M; faster, lighter BERT</li>
-<li><strong>RoBERTa</strong>: 12-layer, 125M; more data, no NSP</li>
-<li><strong>ELECTRA</strong>: 12-layer, 110M; replaced token detection</li>
-<li><strong>XLNet</strong>: 12-layer, 110M; permutation-based autoregressive model</li>
-<li><strong>ConfliBERT</strong>: Domain-specific BERT for political conflict</li>
+<li><strong>BERT:</strong> 12-layer, 110M; masked language modeling</li>
+<li><strong>DistilBERT:</strong> 6-layer, 66M; faster, lighter BERT</li>
+<li><strong>RoBERTa:</strong> 12-layer, 125M; more data, no NSP</li>
+<li><strong>ELECTRA:</strong> 12-layer, 110M; replaced token detection</li>
+<li><strong>XLNet:</strong> 12-layer, 110M; permutation-based autoregressive model</li>
+<li><strong>ConfliBERT:</strong> Domain-specific BERT for political conflict</li>
 </ul>
 <p><br> <em>When there was a choice, we used the cased versions of these models. For ConfliBERT, we used scr-cased.</em></p>
+</section>
+<section id="research-questions" class="slide level2">
+<h2>Research Questions</h2>
+<ul>
+<li>To what extent can encoder models replace humans at our coding tasks?</li>
+<li>How many examples do you need for accurate codings?</li>
+<li>How do encoders trade off in terms of speed and accuracy?</li>
+<li>How best to deal with rare labels?</li>
+</ul>
 </section>
 <section id="modeling-strategy" class="slide level2">
 <h2>Modeling Strategy</h2>
@@ -238,15 +221,11 @@ Shiva Chakrabarty Sharma
 </li>
 <li><strong>Action Type</strong> &amp; <strong>Target Type</strong>: Multilabel classification<br>
 </li>
+<li>Models evaluated using <strong>fixed validation and test sets</strong> (~1,000 records each) with stratified sampling across labels</li>
 <li>Focused on:
 <ul>
-<li><strong>Weighted F1</strong> for multiclass (to address class imbalance)</li>
-<li><strong>Micro F1</strong> for multilabel (captures overall performance)<br>
-</li>
-</ul></li>
-<li>Models evaluated using <strong>fixed validation and test sets</strong> (~1,000 records each)
-<ul>
-<li>Constructed using stratified sampling across labels</li>
+<li><strong>Weighted F1</strong> for multiclass</li>
+<li><strong>Micro F1</strong> for multilabel</li>
 </ul></li>
 </ul>
 </section>
@@ -259,7 +238,7 @@ Shiva Chakrabarty Sharma
 <ul>
 <li>1/32, 1/16, 1/8, 1/4, 1/2, and full training set</li>
 </ul></li>
-<li>This allows us to observe performance trends as data scales<br>
+<li>Allows us to observe performance trends as data scales<br>
 </li>
 <li>For each iteration, one random seed to select stratified samples from the training set</li>
 </ul>
@@ -288,34 +267,50 @@ Shiva Chakrabarty Sharma
 <h2></h2>
 
 <img data-src="presentation_files/figure-revealjs/performance_vs_speed-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"></section>
-<section id="summary-of-results" class="slide level2">
-<h2>Summary of Results</h2>
+<section id="handling-imbalanced-labels" class="slide level2">
+<h2>Handling Imbalanced Labels</h2>
 <ul>
-<li>All of the models end up with relatively similar (and high) F1 scores with 100% of the training data</li>
-<li>With lower amounts of data, ConfliBERT outperforms BERT, DistilBERT and ELECTRA, but is matched by RoBERTa and XLNet</li>
-<li>ConfliBERT and RoBERTa are much faster than XLNet</li>
-<li>Models perform well with commonly represented and simple labels, but struggle with rare and lexically complex ones</li>
+<li><strong>Threshold Tuning</strong> – Adjust decision cutoffs</li>
+<li><strong>Class Weights</strong> – Penalize majority class errors<br>
+</li>
+<li><strong>Weighted Sampling</strong> – Oversample minority classes</li>
+<li><strong>Focal Loss</strong> – Focus learning on difficult/rare examples</li>
+<li><strong>Back Translation</strong> – Synthetic data via translation</li>
+<li><strong>T5 Augmentation</strong> – Synthetic examples using T5 model</li>
+</ul>
+</section>
+<section id="section-6" class="slide level2">
+<h2></h2>
+
+<img data-src="presentation_files/figure-revealjs/imbalance-handling-heatmap-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"></section>
+<section id="precision-recall-tradeoffs" class="slide level2">
+<h2>Precision-Recall Tradeoffs</h2>
+<ul>
+<li><strong>High-Precision Approaches:</strong> Minimize false positives (reduces analyst workload but risks missing true events)</li>
+<li><strong>High-Recall Approaches:</strong> Prioritize comprehensive event capture for monitoring applications where missing critical incidents carries high costs</li>
+<li><strong>Balanced Strategies</strong>: Optimize for general-purpose classification when both false positives and false negatives impose significant operational costs</li>
+</ul>
+</section>
+<section id="section-7" class="slide level2">
+<h2></h2>
+
+<img data-src="presentation_files/figure-revealjs/PR%20plots-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"></section>
+<section id="summary-of-findings" class="slide level2">
+<h2>Summary of Findings</h2>
+<ul>
+<li><strong>Encoder Advantage:</strong> Fine-tuned encoders offer good balance of performance, cost, and control</li>
+<li><strong>Frequency Bias:</strong> Encoders excel at common events but fail on rare, analytically crucial categories</li>
+<li><strong>Imbalance Solutions:</strong> Standard imbalance handling improves rare category performance</li>
+<li><strong>Data, Not Models:</strong> Limitations stem from training scarcity and lexical complexity rather than model architecture</li>
 </ul>
 </section>
 <section id="future-research" class="slide level2">
 <h2>Future Research</h2>
 <ul>
-<li>Synthetic data
-<ul>
-<li>Confli-T5</li>
-</ul></li>
-<li>Oversample rare labels</li>
-<li>Try other variants of ConfliBERT</li>
-<li>Other suggestions?</li>
-</ul>
-</section>
-<section id="reflections" class="slide level2">
-<h2>Reflections</h2>
-<ul>
-<li>Probably want to keep human coders on hand for some tasks</li>
-<li>All things equal, use the domain-specific model</li>
-<li>But also nice that you get good performance with general-purpose models</li>
-<li>ConfliRoBERTa?</li>
+<li><strong>Decoder-Only Models:</strong> Test few-shot learning with GPT-4/Claude for rare categories</li>
+<li><strong>Error Analysis:</strong> Study confusion patterns to refine coding schemes and category definitions</li>
+<li><strong>Cross-Dataset Validation:</strong>Test imbalance strategies across multiple conflict datasets</li>
+<li><strong>Hybrid Approaches:</strong> Combine encoder efficiency with decoder sophistication for rare events</li>
 </ul>
 </section>
 <section id="comments" class="slide level2">
@@ -596,190 +591,172 @@ Shiva Chakrabarty Sharma
     </script>
 
     <script id="quarto-html-after-body" type="application/javascript">
-    window.document.addEventListener("DOMContentLoaded", function (event) {
-      const toggleBodyColorMode = (bsSheetEl) => {
-        const mode = bsSheetEl.getAttribute("data-mode");
-        const bodyEl = window.document.querySelector("body");
-        if (mode === "dark") {
-          bodyEl.classList.add("quarto-dark");
-          bodyEl.classList.remove("quarto-light");
-        } else {
-          bodyEl.classList.add("quarto-light");
-          bodyEl.classList.remove("quarto-dark");
-        }
-      }
-      const toggleBodyColorPrimary = () => {
-        const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
-        if (bsSheetEl) {
-          toggleBodyColorMode(bsSheetEl);
-        }
-      }
-      toggleBodyColorPrimary();  
-      const tabsets =  window.document.querySelectorAll(".panel-tabset-tabby")
-      tabsets.forEach(function(tabset) {
-        const tabby = new Tabby('#' + tabset.id);
-      });
-      const isCodeAnnotation = (el) => {
-        for (const clz of el.classList) {
-          if (clz.startsWith('code-annotation-')) {                     
-            return true;
-          }
-        }
-        return false;
-      }
-      const onCopySuccess = function(e) {
-        // button target
-        const button = e.trigger;
-        // don't keep focus
-        button.blur();
-        // flash "checked"
-        button.classList.add('code-copy-button-checked');
-        var currentTitle = button.getAttribute("title");
-        button.setAttribute("title", "Copied!");
-        let tooltip;
-        if (window.bootstrap) {
-          button.setAttribute("data-bs-toggle", "tooltip");
-          button.setAttribute("data-bs-placement", "left");
-          button.setAttribute("data-bs-title", "Copied!");
-          tooltip = new bootstrap.Tooltip(button, 
-            { trigger: "manual", 
-              customClass: "code-copy-button-tooltip",
-              offset: [0, -8]});
-          tooltip.show();    
-        }
-        setTimeout(function() {
-          if (tooltip) {
-            tooltip.hide();
-            button.removeAttribute("data-bs-title");
-            button.removeAttribute("data-bs-toggle");
-            button.removeAttribute("data-bs-placement");
-          }
-          button.setAttribute("title", currentTitle);
-          button.classList.remove('code-copy-button-checked');
-        }, 1000);
-        // clear code selection
-        e.clearSelection();
-      }
-      const getTextToCopy = function(trigger) {
-          const codeEl = trigger.previousElementSibling.cloneNode(true);
-          for (const childEl of codeEl.children) {
-            if (isCodeAnnotation(childEl)) {
-              childEl.remove();
+      window.document.addEventListener("DOMContentLoaded", function (event) {
+        const tabsets =  window.document.querySelectorAll(".panel-tabset-tabby")
+        tabsets.forEach(function(tabset) {
+          const tabby = new Tabby('#' + tabset.id);
+        });
+        const isCodeAnnotation = (el) => {
+          for (const clz of el.classList) {
+            if (clz.startsWith('code-annotation-')) {                     
+              return true;
             }
           }
-          return codeEl.innerText;
-      }
-      const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
-        text: getTextToCopy
-      });
-      clipboard.on('success', onCopySuccess);
-      if (window.document.getElementById('quarto-embedded-source-code-modal')) {
-        const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
-          text: getTextToCopy,
-          container: window.document.getElementById('quarto-embedded-source-code-modal')
-        });
-        clipboardModal.on('success', onCopySuccess);
-      }
-        var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
-        var mailtoRegex = new RegExp(/^mailto:/);
-          var filterRegex = new RegExp('/' + window.location.host + '/');
-        var isInternal = (href) => {
-            return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+          return false;
         }
-        // Inspect non-navigation links and adorn them if external
-     	var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
-        for (var i=0; i<links.length; i++) {
-          const link = links[i];
-          if (!isInternal(link.href)) {
-            // undo the damage that might have been done by quarto-nav.js in the case of
-            // links that we want to consider external
-            if (link.dataset.originalHref !== undefined) {
-              link.href = link.dataset.originalHref;
+        const onCopySuccess = function(e) {
+          // button target
+          const button = e.trigger;
+          // don't keep focus
+          button.blur();
+          // flash "checked"
+          button.classList.add('code-copy-button-checked');
+          var currentTitle = button.getAttribute("title");
+          button.setAttribute("title", "Copied!");
+          let tooltip;
+          if (window.bootstrap) {
+            button.setAttribute("data-bs-toggle", "tooltip");
+            button.setAttribute("data-bs-placement", "left");
+            button.setAttribute("data-bs-title", "Copied!");
+            tooltip = new bootstrap.Tooltip(button, 
+              { trigger: "manual", 
+                customClass: "code-copy-button-tooltip",
+                offset: [0, -8]});
+            tooltip.show();    
+          }
+          setTimeout(function() {
+            if (tooltip) {
+              tooltip.hide();
+              button.removeAttribute("data-bs-title");
+              button.removeAttribute("data-bs-toggle");
+              button.removeAttribute("data-bs-placement");
             }
-          }
+            button.setAttribute("title", currentTitle);
+            button.classList.remove('code-copy-button-checked');
+          }, 1000);
+          // clear code selection
+          e.clearSelection();
         }
-      function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
-        const config = {
-          allowHTML: true,
-          maxWidth: 500,
-          delay: 100,
-          arrow: false,
-          appendTo: function(el) {
-              return el.closest('section.slide') || el.parentElement;
-          },
-          interactive: true,
-          interactiveBorder: 10,
-          theme: 'light-border',
-          placement: 'bottom-start',
-        };
-        if (contentFn) {
-          config.content = contentFn;
-        }
-        if (onTriggerFn) {
-          config.onTrigger = onTriggerFn;
-        }
-        if (onUntriggerFn) {
-          config.onUntrigger = onUntriggerFn;
-        }
-          config['offset'] = [0,0];
-          config['maxWidth'] = 700;
-        window.tippy(el, config); 
-      }
-      const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
-      for (var i=0; i<noterefs.length; i++) {
-        const ref = noterefs[i];
-        tippyHover(ref, function() {
-          // use id or data attribute instead here
-          let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
-          try { href = new URL(href).hash; } catch {}
-          const id = href.replace(/^#\/?/, "");
-          const note = window.document.getElementById(id);
-          if (note) {
-            return note.innerHTML;
-          } else {
-            return "";
-          }
-        });
-      }
-      const findCites = (el) => {
-        const parentEl = el.parentElement;
-        if (parentEl) {
-          const cites = parentEl.dataset.cites;
-          if (cites) {
-            return {
-              el,
-              cites: cites.split(' ')
-            };
-          } else {
-            return findCites(el.parentElement)
-          }
-        } else {
-          return undefined;
-        }
-      };
-      var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
-      for (var i=0; i<bibliorefs.length; i++) {
-        const ref = bibliorefs[i];
-        const citeInfo = findCites(ref);
-        if (citeInfo) {
-          tippyHover(citeInfo.el, function() {
-            var popup = window.document.createElement('div');
-            citeInfo.cites.forEach(function(cite) {
-              var citeDiv = window.document.createElement('div');
-              citeDiv.classList.add('hanging-indent');
-              citeDiv.classList.add('csl-entry');
-              var biblioDiv = window.document.getElementById('ref-' + cite);
-              if (biblioDiv) {
-                citeDiv.innerHTML = biblioDiv.innerHTML;
+        const getTextToCopy = function(trigger) {
+            const codeEl = trigger.previousElementSibling.cloneNode(true);
+            for (const childEl of codeEl.children) {
+              if (isCodeAnnotation(childEl)) {
+                childEl.remove();
               }
-              popup.appendChild(citeDiv);
-            });
-            return popup.innerHTML;
+            }
+            return codeEl.innerText;
+        }
+        const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+          text: getTextToCopy
+        });
+        clipboard.on('success', onCopySuccess);
+        if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+          const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+            text: getTextToCopy,
+            container: window.document.getElementById('quarto-embedded-source-code-modal')
+          });
+          clipboardModal.on('success', onCopySuccess);
+        }
+          var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+          var mailtoRegex = new RegExp(/^mailto:/);
+            var filterRegex = new RegExp('/' + window.location.host + '/');
+          var isInternal = (href) => {
+              return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+          }
+          // Inspect non-navigation links and adorn them if external
+         var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+          for (var i=0; i<links.length; i++) {
+            const link = links[i];
+            if (!isInternal(link.href)) {
+              // undo the damage that might have been done by quarto-nav.js in the case of
+              // links that we want to consider external
+              if (link.dataset.originalHref !== undefined) {
+                link.href = link.dataset.originalHref;
+              }
+            }
+          }
+        function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+          const config = {
+            allowHTML: true,
+            maxWidth: 500,
+            delay: 100,
+            arrow: false,
+            appendTo: function(el) {
+                return el.closest('section.slide') || el.parentElement;
+            },
+            interactive: true,
+            interactiveBorder: 10,
+            theme: 'light-border',
+            placement: 'bottom-start',
+          };
+          if (contentFn) {
+            config.content = contentFn;
+          }
+          if (onTriggerFn) {
+            config.onTrigger = onTriggerFn;
+          }
+          if (onUntriggerFn) {
+            config.onUntrigger = onUntriggerFn;
+          }
+            config['offset'] = [0,0];
+            config['maxWidth'] = 700;
+          window.tippy(el, config); 
+        }
+        const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+        for (var i=0; i<noterefs.length; i++) {
+          const ref = noterefs[i];
+          tippyHover(ref, function() {
+            // use id or data attribute instead here
+            let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+            try { href = new URL(href).hash; } catch {}
+            const id = href.replace(/^#\/?/, "");
+            const note = window.document.getElementById(id);
+            if (note) {
+              return note.innerHTML;
+            } else {
+              return "";
+            }
           });
         }
-      }
-    });
-    </script>
+        const findCites = (el) => {
+          const parentEl = el.parentElement;
+          if (parentEl) {
+            const cites = parentEl.dataset.cites;
+            if (cites) {
+              return {
+                el,
+                cites: cites.split(' ')
+              };
+            } else {
+              return findCites(el.parentElement)
+            }
+          } else {
+            return undefined;
+          }
+        };
+        var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+        for (var i=0; i<bibliorefs.length; i++) {
+          const ref = bibliorefs[i];
+          const citeInfo = findCites(ref);
+          if (citeInfo) {
+            tippyHover(citeInfo.el, function() {
+              var popup = window.document.createElement('div');
+              citeInfo.cites.forEach(function(cite) {
+                var citeDiv = window.document.createElement('div');
+                citeDiv.classList.add('hanging-indent');
+                citeDiv.classList.add('csl-entry');
+                var biblioDiv = window.document.getElementById('ref-' + cite);
+                if (biblioDiv) {
+                  citeDiv.innerHTML = biblioDiv.innerHTML;
+                }
+                popup.appendChild(citeDiv);
+              });
+              return popup.innerHTML;
+            });
+          }
+        }
+      });
+      </script>
     
 
 </body></html>
