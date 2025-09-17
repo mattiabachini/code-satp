@@ -448,7 +448,7 @@ grid.text("Evaluation Samples Per Second", y = unit(0.02, "npc"), gp = gpar(font
 ## Summary of Findings
 
 - **Encoder Advantage:** Fine-tuned encoders offer good balance of performance, cost, control and efficiency
-- **Model Performance:** Roberta and ConfliBERT provide best balance of speed and accuracy
+- **Model Performance:** Robrterta and ConfliBERT provide best balance of speed and accuracy
 - **Limitations:** Encoders excel at common events but struggle with some rare or lexically complex ones
 - **Imbalance Solutions:** Standard imbalance handling can substantially improve rare category performance, but there are tradeoffs in terms of precision and recall
 
