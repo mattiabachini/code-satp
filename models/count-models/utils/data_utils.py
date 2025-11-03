@@ -64,17 +64,20 @@ def tokenize_seq2seq(examples, tokenizer, max_input_length=512, max_target_lengt
         examples['input'], 
         max_length=max_input_length, 
         truncation=True, 
-        padding=False
+        padding='max_length'
     )
     
-    # Setup targets
+    # Setup targets with padding
     labels = tokenizer(
         examples['target'], 
         max_length=max_target_length, 
         truncation=True, 
-        padding=False
+        padding='max_length'
     )
-    model_inputs['labels'] = labels['input_ids']
+    
+    # Replace padding token id's in the labels with -100 so they are ignored by the loss
+    labels = [[(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels['input_ids']]
+    model_inputs['labels'] = labels
     
     return model_inputs
 
@@ -94,7 +97,7 @@ def tokenize_for_regression(examples, tokenizer, max_length=512):
     return tokenizer(
         examples['text'], 
         truncation=True, 
-        padding=False, 
+        padding='max_length', 
         max_length=max_length
     )
 
@@ -201,7 +204,7 @@ def tokenize_qa(examples, tokenizer, max_length=512, stride=128):
         stride=stride,
         return_overflowing_tokens=True,
         return_offsets_mapping=True,
-        padding=False
+        padding='max_length'
     )
     
     # Map back to original examples since we may have overflow
