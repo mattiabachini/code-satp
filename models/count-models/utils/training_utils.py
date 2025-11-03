@@ -25,9 +25,13 @@ def create_seq2seq_training_args(
     Returns:
         Seq2SeqTrainingArguments object
     """
+    # Use bf16 on Ampere+ (e.g., A100) for speed+stability, otherwise fp16 on GPU
+    use_bf16 = torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8
+    use_fp16 = torch.cuda.is_available() and not use_bf16
+
     return Seq2SeqTrainingArguments(
         output_dir=output_dir,
-        eval_strategy="epoch",
+        evaluation_strategy="epoch",
         save_strategy="epoch",
         learning_rate=learning_rate,
         per_device_train_batch_size=batch_size,
@@ -40,7 +44,10 @@ def create_seq2seq_training_args(
         predict_with_generate=True,
         generation_max_length=10,
         logging_steps=50,
-        fp16=torch.cuda.is_available(),
+        fp16=use_fp16,
+        bf16=use_bf16,
+        tf32=True,
+        optim="adafactor",
         report_to="none",
         seed=seed
     )
@@ -68,7 +75,7 @@ def create_regression_training_args(
     """
     return TrainingArguments(
         output_dir=output_dir,
-        eval_strategy="epoch",
+        evaluation_strategy="epoch",
         save_strategy="epoch",
         learning_rate=learning_rate,
         per_device_train_batch_size=batch_size,
@@ -79,7 +86,9 @@ def create_regression_training_args(
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         logging_steps=50,
-        fp16=torch.cuda.is_available(),
+        fp16=False,
+        bf16=False,
+        tf32=True,
         report_to="none",
         seed=seed
     )
@@ -105,9 +114,13 @@ def create_qa_training_args(
     Returns:
         TrainingArguments object
     """
+    # Use bf16 on Ampere+ (e.g., A100) for speed+stability, otherwise fp16 on GPU
+    use_bf16 = torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8
+    use_fp16 = torch.cuda.is_available() and not use_bf16
+
     return TrainingArguments(
         output_dir=output_dir,
-        eval_strategy="epoch",
+        evaluation_strategy="epoch",
         save_strategy="epoch",
         learning_rate=learning_rate,
         per_device_train_batch_size=batch_size,
@@ -118,7 +131,9 @@ def create_qa_training_args(
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         logging_steps=50,
-        fp16=torch.cuda.is_available(),
+        fp16=use_fp16,
+        bf16=use_bf16,
+        tf32=True,
         report_to="none",
         seed=seed
     )

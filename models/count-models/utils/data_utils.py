@@ -67,16 +67,17 @@ def tokenize_seq2seq(examples, tokenizer, max_input_length=512, max_target_lengt
         padding='max_length'
     )
     
-    # Setup targets with padding
-    labels = tokenizer(
-        examples['target'], 
-        max_length=max_target_length, 
-        truncation=True, 
-        padding='max_length'
-    )
+    # Setup targets with proper target encoding pathway
+    with tokenizer.as_target_tokenizer():
+        target_encodings = tokenizer(
+            examples['target'], 
+            max_length=max_target_length, 
+            truncation=True, 
+            padding='max_length'
+        )
     
     # Replace padding token id's in the labels with -100 so they are ignored by the loss
-    labels = [[(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels['input_ids']]
+    labels = [[(l if l != tokenizer.pad_token_id else -100) for l in label] for label in target_encodings['input_ids']]
     model_inputs['labels'] = labels
     
     return model_inputs

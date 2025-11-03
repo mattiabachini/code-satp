@@ -40,16 +40,20 @@ class PoissonRegressionModel(torch.nn.Module):
         """
         outputs = self.bert(input_ids, attention_mask=attention_mask)
         sequence_output = outputs[0][:, 0, :]  # [CLS] token
-        logits = self.regressor(sequence_output).squeeze(-1)
+        # Predict log-rate (log of Poisson mean) for numerical stability
+        log_rate = self.regressor(sequence_output).squeeze(-1)
+        # Convert to mean count (mu) for outputs
+        mu = torch.exp(log_rate)
         
         loss = None
         if labels is not None:
-            loss_fct = PoissonNLLLoss(log_input=False)
-            loss = loss_fct(logits, labels.float())
+            # Use Poisson loss with log_input=True (inputs are log of mean)
+            loss_fct = PoissonNLLLoss(log_input=True)
+            loss = loss_fct(log_rate, labels.float())
             
         return SequenceClassifierOutput(
             loss=loss,
-            logits=logits,
+            logits=mu,
             hidden_states=outputs.hidden_states if hasattr(outputs, 'hidden_states') else None,
             attentions=outputs.attentions if hasattr(outputs, 'attentions') else None
         )
