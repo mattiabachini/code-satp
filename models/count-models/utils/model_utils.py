@@ -104,10 +104,16 @@ def extract_qa_answer(start_logits, end_logits, input_ids, tokenizer, n_best=1):
                         best_start = start_index
                         best_end = end_index
         
-        # Extract answer tokens
-        answer_tokens = input_ids[i][best_start:best_end + 1]
-        answer_text = tokenizer.decode(answer_tokens, skip_special_tokens=True)
-        answers.append(answer_text)
+        # Handle impossible answers (best_start == 0 might indicate impossible, but we check validity)
+        # If the span is invalid or very short and at position 0, it might be impossible
+        if best_start == 0 and best_end == 0 and best_score < 0:
+            # Likely an impossible answer - return empty string
+            answers.append("")
+        else:
+            # Extract answer tokens
+            answer_tokens = input_ids[i][best_start:best_end + 1]
+            answer_text = tokenizer.decode(answer_tokens, skip_special_tokens=True)
+            answers.append(answer_text)
     
     return answers
 

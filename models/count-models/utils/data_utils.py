@@ -70,11 +70,11 @@ def tokenize_seq2seq(examples, tokenizer, max_input_length=512, max_target_lengt
     # Setup targets with proper target encoding pathway
     with tokenizer.as_target_tokenizer():
         target_encodings = tokenizer(
-            examples['target'], 
-            max_length=max_target_length, 
-            truncation=True, 
-            padding='max_length'
-        )
+        examples['target'], 
+        max_length=max_target_length, 
+        truncation=True, 
+        padding='max_length'
+    )
     
     # Replace padding token id's in the labels with -100 so they are ignored by the loss
     labels = [[(l if l != tokenizer.pad_token_id else -100) for l in label] for label in target_encodings['input_ids']]
@@ -161,10 +161,10 @@ def prepare_qa_data(df, question="How many people were killed?"):
                 answer_start = numbers[0].start()
                 answer_text = numbers[0].group()
         
-        # If no number found in text, set answer_start to 0 (will be handled in training)
+        # If no number found in text, keep answer_start as -1 to mark as impossible answer
+        # This will be handled properly in tokenize_qa() with impossible answer flag
         if answer_start == -1:
-            answer_start = 0
-            answer_text = str(count)
+            answer_text = str(count)  # Keep the true count for reference, but mark as impossible
         
         questions.append(question)
         contexts.append(context)
@@ -221,10 +221,11 @@ def tokenize_qa(examples, tokenizer, max_length=512, stride=128):
         sample_index = sample_mapping[i]
         answers = examples['answers'][sample_index]
         
-        # If no answer or answer not in text, set position to 0
+        # If no answer or answer not in text, use -1 to mark as impossible answer
+        # HuggingFace QA models handle -1 as "impossible answer" (no answer in context)
         if len(answers['answer_start']) == 0 or answers['answer_start'][0] == -1:
-            start_positions.append(0)
-            end_positions.append(0)
+            start_positions.append(-1)
+            end_positions.append(-1)
             continue
         
         # Get answer span
@@ -245,9 +246,9 @@ def tokenize_qa(examples, tokenizer, max_length=512, stride=128):
         
         # Check if answer is within the current chunk
         if token_start_index < 0 or token_end_index >= len(offsets):
-            # Answer not in this chunk, set to CLS token position
-            start_positions.append(0)
-            end_positions.append(0)
+            # Answer not in this chunk, mark as impossible answer
+            start_positions.append(-1)
+            end_positions.append(-1)
         else:
             start_positions.append(token_start_index)
             end_positions.append(token_end_index)
