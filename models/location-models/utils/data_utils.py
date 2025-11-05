@@ -5,11 +5,11 @@ import re
 
 def prepare_seq2seq_data(df, model_type='nt5'):
     """
-    Prepare data in format for seq2seq models (NT5, Flan-T5, IndicBART).
+    Prepare data in format for seq2seq models (NT5, Flan-T5, IndicBART, mT5).
     
     Args:
         df: DataFrame with 'incident_summary' and 'total_fatalities' columns
-        model_type: Type of model ('nt5', 'flan-t5', 'indicbart')
+        model_type: Type of model ('nt5', 'flan-t5', 'indicbart', 'mt5')
         
     Returns:
         dict with 'input' and 'target' lists
@@ -21,6 +21,8 @@ def prepare_seq2seq_data(df, model_type='nt5'):
         # Format prompt based on model type
         if model_type == 'nt5':
             input_text = f"answer_me: How many people were killed? Answer with only a number. context: {row['incident_summary']}"
+        elif model_type == 'mt5':
+            input_text = f"<2en> How many people were killed? Answer with only a number.\n\n{row['incident_summary']}"
         else:  # flan-t5, indicbart
             input_text = f"How many people were killed? Answer with only a number.\n\n{row['incident_summary']}"
         
