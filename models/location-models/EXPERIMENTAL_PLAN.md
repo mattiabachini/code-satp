@@ -42,6 +42,25 @@ and what is the privacy-performance trade-off between self-hosted vs. proprietar
 **Expected**: 15-25% exact match
 **Purpose**: Show simple methods are insufficient
 
+
+### Favorites
+
+**1. Seq2seq Models**
+*Flan-T5-base*
+*Flan-T5-Large*
+*mt5-base*
+*mt0-base*
+*IndicBART*
+
+**2. BERT Models**
+*confliBERT*
+*MuRIL-base*
+*IndicBERT*
+*XLM-RoBERTa-base*
+
+**3. Modern Decoders**
+*Gemini 1.5 Flash*
+*GPT-4o-mini*
 ---
 
 ### STAGE 1: BASE MODELS (Fine-tune all on Colab Free)
@@ -63,7 +82,7 @@ and what is the privacy-performance trade-off between self-hosted vs. proprietar
 | Model | Hugging Face ID | Size | Why Test |
 |-------|-----------------|------|----------|
 | BERT-base | `bert-base-cased` | 110M | Standard BERT baseline |
-| **confliBERT** | `snowood1/ConfliBERT-scr-uncased` | 110M | **Pre-trained on political conflict texts** |
+| **confliBERT** | `snowood1/ConfliBERT-scr-uncased` | 110M | **Pre-trained on political conflict texts** |  
 | MuRIL-base | `google/muril-base-cased` | 237M | Google's Indian BERT |
 | IndicBERT | `ai4bharat/indic-bert` | 110M | AI4Bharat's Indian BERT |
 | XLM-RoBERTa-base | `xlm-roberta-base` | 270M | Multilingual RoBERTa |
@@ -76,7 +95,6 @@ and what is the privacy-performance trade-off between self-hosted vs. proprietar
 - Should excel at understanding conflict incident language
 - Likely better at recognizing conflict-related entities and context
 - Important comparison: domain-specific (conflict) vs. language-specific (Indian)
-
 ---
 
 ### STAGE 2: LARGE MODELS (Fine-tune top 2-3 from Stage 1)

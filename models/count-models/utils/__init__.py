@@ -17,6 +17,17 @@ from .training_utils import (
     create_qa_training_args,
     cleanup_model
 )
+from .llm_utils import (
+    make_input,
+    parse_fatalities,
+    load_causal,
+    load_t5,
+    run_causal_batch,
+    run_t5_batch,
+    run_openai_batch,
+    run_gemini_batch,
+    already_done as llm_already_done
+)
 
 __all__ = [
     'extract_number',
@@ -35,5 +46,14 @@ __all__ = [
     'create_regression_training_args',
     'create_qa_training_args',
     'cleanup_model',
+    'make_input',
+    'parse_fatalities',
+    'load_causal',
+    'load_t5',
+    'run_causal_batch',
+    'run_t5_batch',
+    'run_openai_batch',
+    'run_gemini_batch',
+    'llm_already_done',
 ]
 

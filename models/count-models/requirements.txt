@@ -1,8 +1,13 @@
 # HuggingFace libraries (NOT on Colab by default - INSTALL THESE)
 transformers>=4.35.0
 datasets>=2.14.0
-accelerate>=0.24.0
+accelerate>=0.33
 evaluate>=0.4.0
+bitsandbytes>=0.43
+
+# API libraries for LLM inference
+openai>=1.0.0
+google-generativeai
 
 # Already installed on Colab - commented out to avoid reinstalling
 # Data and computation
