@@ -7,8 +7,7 @@ bitsandbytes>=0.43
 
 # API libraries for LLM inference
 openai>=1.0.0
-# Use >=0.7.0 so Gemini 1.5 endpoints are available without extra pip install
-google-generativeai>=0.7.0
+google-generativeai>=1.0.0
 
 # Already installed on Colab - commented out to avoid reinstalling
 # Data and computation

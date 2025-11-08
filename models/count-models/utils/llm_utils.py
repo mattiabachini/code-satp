@@ -281,16 +281,19 @@ def run_t5_batch(
             print(f"  Processing {i + 1}/{total}...", end='\r', flush=True)
         
         prompt = f"Extract deaths as JSON.\n\n{make_input(t)}"
-        inputs = tok(
+        encoded = tok(
             prompt,
             return_tensors="pt",
             truncation=True,
             max_length=max_input_tokens,
-            return_overflowing_tokens=True,
         )
-        if inputs.get("overflowing_tokens"):
+        if encoded.get("overflowing_tokens"):
             truncated += 1
-        tensor_inputs = {k: v.to(model.device) for k, v in inputs.items() if isinstance(v, torch.Tensor)}
+        tensor_inputs = {
+            k: v.to(model.device)
+            for k, v in encoded.items()
+            if isinstance(v, torch.Tensor) and k != "overflowing_tokens"
+        }
         gen = model.generate(
             **tensor_inputs,
             max_new_tokens=max_new_tokens,
