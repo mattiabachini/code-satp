@@ -33,6 +33,8 @@ INSTR = (
     "Return JSON exactly as: {\"fatalities\": <integer>}. If no fatalities are mentioned, use 0."
 )
 
+# Optional toggle to enable few-shot prompting for T5 models
+USE_T5_FEWSHOT = False
 
 def make_input(text: str) -> str:
     """Create input prompt for the model."""
@@ -48,6 +50,26 @@ def make_input_t5(text: str) -> str:
     """
     return f"How many people were killed? Answer with only a number.\n\n{text}"
 
+def make_input_t5_fewshot(text: str, shots: Optional[list[tuple[str, str]]] = None) -> str:
+    """
+    Create a few-shot prompt for T5 models to stabilize zero-shot extraction.
+    
+    Args:
+        text: The input incident summary
+        shots: Optional list of (example_text, example_answer) pairs
+    """
+    if shots is None:
+        shots = [
+            ("An encounter took place but no casualties were reported.", "0"),
+            ("Maoists killed two villagers in the forest.", "2"),
+            ("A blast injured five people; no one was killed.", "0"),
+        ]
+    header = "How many people were killed? Answer with only a number."
+    examples = []
+    for s, a in shots:
+        examples.append(f"Text: {s}\nAnswer: {a}")
+    return f"{header}\n\n" + "\n\n".join(examples) + f"\n\nText: {text}\nAnswer:"
+
 
 def parse_fatalities(s: str) -> int:
     """
@@ -61,6 +83,19 @@ def parse_fatalities(s: str) -> int:
     """
     if not s:
         return 0
+    # Normalize whitespace and strip common code fences/backticks
+    s = str(s).strip()
+    # If fenced in triple backticks, extract inner content
+    try:
+        import re as _re
+        fenced = _re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", s, flags=_re.IGNORECASE)
+        if fenced:
+            s = fenced.group(1).strip()
+    except Exception:
+        pass
+    # Remove stray single backticks
+    if "`" in s:
+        s = s.replace("`", "")
     
     # Try to extract from JSON format first
     m = re.search(r'"fatalities"\s*:\s*(-?\d+)', s or "")
@@ -315,8 +350,8 @@ def run_t5_batch(
         if use_simple_progress:
             print(f"  Processing {i + 1}/{total}...", end='\r', flush=True)
         
-        # Use a T5-specific, simple prompt format
-        prompt = make_input_t5(t)
+        # Use a T5-specific prompt format (few-shot optional)
+        prompt = make_input_t5_fewshot(t) if USE_T5_FEWSHOT else make_input_t5(t)
         encoded = tok(
             prompt,
             return_tensors="pt",
@@ -414,11 +449,17 @@ def run_openai_batch(
     outs = []
     total = len(texts)
     errors = 0
+    # Progress handling (align with Gemini/Causal/T5)
+    progress_bar = None
+    use_simple_progress = False
+    if show_progress and total > 0:
+        if tqdm is not None:
+            progress_bar = tqdm(total=total, desc="Generating (OpenAI)", leave=False)
+        else:
+            use_simple_progress = True
+            print(f"  Processing 0/{total}...", flush=True)
     
     for i, text in enumerate(texts):
-        if show_progress and (i + 1) % 10 == 0:
-            print(f"  Processing {i + 1}/{total}...", end='\r')
-        
         try:
             # Use standardized basic prompt for all models (fair comparison)
             response = client.chat.completions.create(
@@ -436,9 +477,17 @@ def run_openai_batch(
             outs.append("")  # Empty string on error
             errors += 1
         
+        if progress_bar is not None:
+            progress_bar.update(1)
+        elif use_simple_progress:
+            print(f"  Processing {i + 1}/{total}...", flush=True)
+        
         # Rate limiting
         if rate_limit_delay > 0:
             time.sleep(rate_limit_delay)
+    
+    if progress_bar is not None:
+        progress_bar.close()
     
     if show_progress:
         print(f"  Completed {total}/{total} (errors: {errors})      ")
@@ -523,44 +572,67 @@ def run_gemini_batch(
     total = len(texts)
     errors = 0
     diagnostics: List[Dict[str, Any]] = []
+    # Progress handling (mirror causal/T5 style)
+    progress_bar = None
+    use_simple_progress = False
+    if show_progress and total > 0:
+        if tqdm is not None:
+            progress_bar = tqdm(total=total, desc="Generating (Gemini)", leave=False)
+        else:
+            use_simple_progress = True
+            print(f"  Processing 0/{total}...", flush=True)
+    
+    # Configure generation to prefer raw JSON output (avoid code fences)
+    gen_config: Dict[str, Any] = {
+        "max_output_tokens": max_output_tokens,
+        "temperature": 0.0,
+        "response_mime_type": "application/json",
+    }
+    # Configure permissive safety for violence, if available
+    safety_settings = None
+    try:
+        from google.generativeai.types import HarmCategory, HarmBlockThreshold  # type: ignore
+        safety_settings = [
+            {
+                "category": HarmCategory.HARM_CATEGORY_VIOLENCE,
+                "threshold": HarmBlockThreshold.BLOCK_NONE,
+            }
+        ]
+    except Exception:
+        safety_settings = None
     
     for i, text in enumerate(texts):
-        if show_progress and (i + 1) % 10 == 0:
-            print(f"  Processing {i + 1}/{total}...", end='\r')
-        
         out = ""
         finish_reason = None
         last_error: Optional[str] = None
         for attempt in range(max_retries):
-            try:
-                prompt = make_input(text)
-                response = model.generate_content(
+        try:
+            prompt = make_input(text)
+            response = model.generate_content(
                     prompt,
-                    generation_config={
-                        "max_output_tokens": max_output_tokens,
-                        "temperature": 0.0
-                    }
-                )
+                    generation_config=gen_config,
+                    safety_settings=safety_settings
+            )
                 # Decode response based on finish_reason
                 # finish_reason: 1=STOP, 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
-                if hasattr(response, 'candidates') and response.candidates:
-                    candidate = response.candidates[0]
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
                     finish_reason = getattr(candidate, 'finish_reason', None)
                     if finish_reason == 2:
                         # MAX_TOKENS - try to keep whatever text we have
-                        if hasattr(candidate, 'content') and candidate.content.parts:
-                            out = candidate.content.parts[0].text.strip()
-                        else:
-                            out = ""
-                    elif hasattr(response, 'text') and response.text:
-                        out = response.text.strip()
+                    if hasattr(candidate, 'content') and candidate.content.parts:
+                        out = candidate.content.parts[0].text.strip()
                     else:
                         out = ""
+                elif hasattr(response, 'text') and response.text:
+                    out = response.text.strip()
                 else:
-                    out = response.text.strip() if hasattr(response, 'text') and response.text else ""
+                    out = ""
+            else:
+                out = response.text.strip() if hasattr(response, 'text') and response.text else ""
                 # Success
                 break
-            except Exception as exc:
+        except Exception as exc:
                 last_error = str(exc)
                 # Transient error handling with exponential backoff + jitter
                 # Fallback to generic backoff even if exception types aren't available
@@ -582,10 +654,17 @@ def run_gemini_batch(
             "finish_reason": finish_reason,
             "error": last_error,
         })
+        if progress_bar is not None:
+            progress_bar.update(1)
+        elif use_simple_progress:
+            print(f"  Processing {i + 1}/{total}...", flush=True)
         
         # Rate limiting
         if rate_limit_delay > 0:
             time.sleep(rate_limit_delay)
+    
+    if progress_bar is not None:
+        progress_bar.close()
     
     if show_progress:
         print(f"  Completed {total}/{total} (errors: {errors})      ")
