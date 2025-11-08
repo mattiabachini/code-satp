@@ -361,22 +361,31 @@ def run_t5_batch(
         
         # Use a T5-specific prompt format (few-shot optional)
         prompt = make_input_t5_fewshot(t) if USE_T5_FEWSHOT else make_input_t5(t)
+        # First, probe for overflow WITHOUT tensors to avoid ragged tensor errors
+        try:
+            probe = tok(
+                prompt,
+                truncation=True,
+                max_length=max_input_tokens,
+                return_overflowing_tokens=True,
+            )
+            if isinstance(probe, dict) and probe.get("overflowing_tokens") is not None:
+                truncated += 1
+            else:
+                # Fallback length-based check (best-effort)
+                ids = probe.get("input_ids")
+                if isinstance(ids, list) and len(ids) >= max_input_tokens:
+                    truncated += 1
+        except Exception:
+            # If probing fails, continue without marking
+            pass
+        # Now encode with tensors for generation (no overflowing tokens here)
         encoded = tok(
             prompt,
             return_tensors="pt",
             truncation=True,
             max_length=max_input_tokens,
-            return_overflowing_tokens=True,
         )
-        # Robust truncation detection across tokenizer versions
-        if encoded.get("overflowing_tokens") is not None:
-            truncated += 1
-        else:
-            try:
-                if encoded["input_ids"].shape[-1] >= max_input_tokens:
-                    truncated += 1
-            except Exception:
-                pass
         # Only pass expected inputs to generate (avoid keys like 'overflow_to_sample_mapping')
         tensor_inputs = {
             "input_ids": encoded["input_ids"].to(model.device),
