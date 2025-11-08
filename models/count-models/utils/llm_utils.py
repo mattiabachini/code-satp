@@ -202,19 +202,8 @@ def run_causal_batch(
         if use_simple_progress:
             print(f"  Processing {i + 1}/{total}...", end='\r', flush=True)
         
-        # Use chat template if available (for instruction-tuned models)
-        if hasattr(tok, "apply_chat_template"):
-            messages = [
-                {"role": "system", "content": "You are a precise information extractor."},
-                {"role": "user", "content": make_input(t)}
-            ]
-            prompt = tok.apply_chat_template(
-                messages, 
-                tokenize=False, 
-                add_generation_prompt=True
-            )
-        else:
-            prompt = make_input(t)
+        # Use standardized basic prompt for all models (fair comparison)
+        prompt = make_input(t)
         
         inputs = tok(prompt, return_tensors="pt").to(model.device)
         gen = model.generate(
@@ -280,7 +269,8 @@ def run_t5_batch(
         if use_simple_progress:
             print(f"  Processing {i + 1}/{total}...", end='\r', flush=True)
         
-        prompt = f"Extract deaths as JSON.\n\n{make_input(t)}"
+        # Use standardized basic prompt for all models (fair comparison)
+        prompt = make_input(t)
         encoded = tok(
             prompt,
             return_tensors="pt",
@@ -376,10 +366,10 @@ def run_openai_batch(
             print(f"  Processing {i + 1}/{total}...", end='\r')
         
         try:
+            # Use standardized basic prompt for all models (fair comparison)
             response = client.chat.completions.create(
                 model=model_name,
                 messages=[
-                    {"role": "system", "content": "You are a precise information extractor."},
                     {"role": "user", "content": make_input(text)}
                 ],
                 max_tokens=max_tokens,
@@ -388,7 +378,7 @@ def run_openai_batch(
             out = response.choices[0].message.content.strip()
             outs.append(out)
         except Exception as e:
-            print(f"\n  Error on item {i + 1}: {e}")
+            # Don't print error here to avoid disrupting progress bar
             outs.append("")  # Empty string on error
             errors += 1
         
@@ -499,7 +489,8 @@ def run_gemini_batch(
                     if hasattr(candidate, 'content') and candidate.content.parts:
                         out = candidate.content.parts[0].text.strip()
                     else:
-                        print(f"\n  Warning on item {i + 1}: MAX_TOKENS hit, no content generated")
+                        # Don't print warning here to avoid disrupting progress bar
+                        errors += 1
                         out = ""
                 elif hasattr(response, 'text') and response.text:
                     out = response.text.strip()
