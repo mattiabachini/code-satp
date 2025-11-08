@@ -490,7 +490,23 @@ def run_gemini_batch(
                     "temperature": 0.0
                 }
             )
-            out = response.text.strip() if response.text else ""
+            # Handle response based on finish_reason
+            # finish_reason: 1=STOP (normal), 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'finish_reason') and candidate.finish_reason == 2:
+                    # MAX_TOKENS - try to get partial content or fail gracefully
+                    if hasattr(candidate, 'content') and candidate.content.parts:
+                        out = candidate.content.parts[0].text.strip()
+                    else:
+                        print(f"\n  Warning on item {i + 1}: MAX_TOKENS hit, no content generated")
+                        out = ""
+                elif hasattr(response, 'text') and response.text:
+                    out = response.text.strip()
+                else:
+                    out = ""
+            else:
+                out = response.text.strip() if hasattr(response, 'text') and response.text else ""
             outs.append(out)
         except Exception as exc:
             if google_api_exceptions and isinstance(exc, google_api_exceptions.NotFound):
