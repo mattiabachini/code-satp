@@ -20,6 +20,7 @@ from .training_utils import (
 from .llm_utils import (
     make_input,
     parse_fatalities,
+    time_inference_call,
     load_causal,
     load_t5,
     run_causal_batch,
@@ -48,6 +49,7 @@ __all__ = [
     'cleanup_model',
     'make_input',
     'parse_fatalities',
+    'time_inference_call',
     'load_causal',
     'load_t5',
     'run_causal_batch',

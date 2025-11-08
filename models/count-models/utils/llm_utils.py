@@ -3,7 +3,7 @@
 import os
 import re
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple, Callable, Any, Dict
 from pathlib import Path
 import importlib
 
@@ -60,6 +60,36 @@ def parse_fatalities(s: str) -> int:
     # Try to find any number in the output
     m = re.search(r'-?\d+', s or "")
     return max(0, int(m.group(0))) if m else 0
+
+
+def time_inference_call(inference_func: Callable, *args, **kwargs) -> Tuple[Any, Dict[str, float]]:
+    """
+    Time an inference function call and return results with timing.
+    
+    Args:
+        inference_func: The inference function to call
+        *args, **kwargs: Arguments to pass to the inference function
+        
+    Returns:
+        tuple: (outputs, timing_dict) where timing_dict contains:
+            - total_time_seconds: Total inference time
+            - time_per_item_seconds: Average time per item
+            - throughput_items_per_second: Items processed per second
+            - num_items: Number of items processed
+    """
+    start_time = time.time()
+    outputs = inference_func(*args, **kwargs)
+    elapsed_time = time.time() - start_time
+    
+    num_items = len(outputs) if isinstance(outputs, list) else 1
+    timing = {
+        'total_time_seconds': elapsed_time,
+        'time_per_item_seconds': elapsed_time / num_items if num_items > 0 else 0,
+        'throughput_items_per_second': num_items / elapsed_time if elapsed_time > 0 else 0,
+        'num_items': num_items
+    }
+    
+    return outputs, timing
 
 
 def _resolve_hf_token(explicit_token: Optional[str] = None) -> Optional[str]:
