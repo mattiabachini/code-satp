@@ -31,6 +31,11 @@ def create_seq2seq_training_args(
     use_bf16 = torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8
     use_fp16 = torch.cuda.is_available() and not use_bf16
 
+    supports_tf32 = False
+    if torch.cuda.is_available():
+        major, _ = torch.cuda.get_device_capability(0)
+        supports_tf32 = major >= 8
+
     return Seq2SeqTrainingArguments(
         output_dir=output_dir,
         eval_strategy="epoch",
@@ -48,7 +53,7 @@ def create_seq2seq_training_args(
         logging_steps=50,
         fp16=use_fp16,
         bf16=use_bf16,
-        tf32=True,
+        tf32=supports_tf32,
         optim="adafactor",
         report_to="none",
         seed=seed
@@ -75,6 +80,11 @@ def create_regression_training_args(
     Returns:
         TrainingArguments object
     """
+    supports_tf32 = False
+    if torch.cuda.is_available():
+        major, _ = torch.cuda.get_device_capability(0)
+        supports_tf32 = major >= 8
+
     return TrainingArguments(
         output_dir=output_dir,
         eval_strategy="epoch",
@@ -90,7 +100,7 @@ def create_regression_training_args(
         logging_steps=50,
         fp16=False,
         bf16=False,
-        tf32=True,
+        tf32=supports_tf32,
         report_to="none",
         seed=seed
     )
@@ -120,6 +130,11 @@ def create_qa_training_args(
     use_bf16 = torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8
     use_fp16 = torch.cuda.is_available() and not use_bf16
 
+    supports_tf32 = False
+    if torch.cuda.is_available():
+        major, _ = torch.cuda.get_device_capability(0)
+        supports_tf32 = major >= 8
+
     return TrainingArguments(
         output_dir=output_dir,
         eval_strategy="epoch",
@@ -135,7 +150,7 @@ def create_qa_training_args(
         logging_steps=50,
         fp16=use_fp16,
         bf16=use_bf16,
-        tf32=True,
+        tf32=supports_tf32,
         report_to="none",
         seed=seed
     )
