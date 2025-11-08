@@ -46,7 +46,7 @@ def make_input_t5(text: str) -> str:
     Flan-T5 models typically perform best with a plain instruction followed by context,
     without JSON schema or chat-style scaffolding.
     """
-    return f"How many people were killed? Answer with a single integer.\n\n{text}"
+    return f"How many people were killed? Answer with only a number.\n\n{text}"
 
 
 def parse_fatalities(s: str) -> int:
@@ -333,10 +333,10 @@ def run_t5_batch(
                     truncated += 1
             except Exception:
                 pass
+        # Only pass expected inputs to generate (avoid keys like 'overflow_to_sample_mapping')
         tensor_inputs = {
-            k: v.to(model.device)
-            for k, v in encoded.items()
-            if isinstance(v, torch.Tensor) and k != "overflowing_tokens"
+            "input_ids": encoded["input_ids"].to(model.device),
+            "attention_mask": encoded["attention_mask"].to(model.device),
         }
         gen = model.generate(
             **tensor_inputs,
