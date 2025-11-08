@@ -1,5 +1,6 @@
 """Utilities for running LLM inference for death count extraction."""
 
+import os
 import re
 import time
 from typing import List, Optional
@@ -11,6 +12,7 @@ from transformers import (
     AutoModelForCausalLM, 
     AutoModelForSeq2SeqLM
 )
+from huggingface_hub.utils import GatedRepoError
 
 
 # Configuration constants
@@ -53,7 +55,28 @@ def parse_fatalities(s: str) -> int:
     return max(0, int(m.group(0))) if m else 0
 
 
-def load_causal(model_id: str):
+def _resolve_hf_token(explicit_token: Optional[str] = None) -> Optional[str]:
+    """
+    Resolve a Hugging Face token from explicit argument or environment.
+
+    Args:
+        explicit_token: Token passed to the function
+
+    Returns:
+        Optional[str]: Token string if available
+    """
+    if explicit_token:
+        return explicit_token
+
+    for env_var in ("HUGGINGFACE_TOKEN", "HF_TOKEN"):
+        token = os.environ.get(env_var)
+        if token:
+            return token
+
+    return None
+
+
+def load_causal(model_id: str, token: Optional[str] = None):
     """
     Load a causal language model (for instruction-tuned models like Llama, Mistral).
     
@@ -63,14 +86,33 @@ def load_causal(model_id: str):
     Returns:
         tuple: (tokenizer, model)
     """
-    tok = AutoTokenizer.from_pretrained(model_id, use_fast=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        device_map="auto",
-        torch_dtype=DTYPE,
-        load_in_4bit=USE_4BIT,
-        bnb_4bit_compute_dtype=DTYPE if USE_4BIT else None
-    )
+    hf_token = _resolve_hf_token(token)
+
+    try:
+        tok = AutoTokenizer.from_pretrained(
+            model_id,
+            use_fast=True,
+            token=hf_token
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            device_map="auto",
+            torch_dtype=DTYPE,
+            load_in_4bit=USE_4BIT,
+            bnb_4bit_compute_dtype=DTYPE if USE_4BIT else None,
+            token=hf_token
+        )
+    except GatedRepoError as exc:
+        hint = (
+            f"Access to the gated model '{model_id}' requires an approved Hugging Face token. "
+            "Visit the model card, request access if needed, then provide your token via "
+            "`HUGGINGFACE_TOKEN` or `HF_TOKEN` environment variables, or call "
+            "`huggingface_hub.login()` before loading the model."
+        )
+        if hf_token is None:
+            hint += " No token was detected in the current environment."
+        raise RuntimeError(hint) from exc
+
     return tok, model
 
 
