@@ -606,33 +606,33 @@ def run_gemini_batch(
         finish_reason = None
         last_error: Optional[str] = None
         for attempt in range(max_retries):
-        try:
-            prompt = make_input(text)
-            response = model.generate_content(
+            try:
+                prompt = make_input(text)
+                response = model.generate_content(
                     prompt,
                     generation_config=gen_config,
                     safety_settings=safety_settings
-            )
+                )
                 # Decode response based on finish_reason
                 # finish_reason: 1=STOP, 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
-            if hasattr(response, 'candidates') and response.candidates:
-                candidate = response.candidates[0]
+                if hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
                     finish_reason = getattr(candidate, 'finish_reason', None)
                     if finish_reason == 2:
                         # MAX_TOKENS - try to keep whatever text we have
-                    if hasattr(candidate, 'content') and candidate.content.parts:
-                        out = candidate.content.parts[0].text.strip()
+                        if hasattr(candidate, 'content') and candidate.content.parts:
+                            out = candidate.content.parts[0].text.strip()
+                        else:
+                            out = ""
+                    elif hasattr(response, 'text') and response.text:
+                        out = response.text.strip()
                     else:
                         out = ""
-                elif hasattr(response, 'text') and response.text:
-                    out = response.text.strip()
                 else:
-                    out = ""
-            else:
-                out = response.text.strip() if hasattr(response, 'text') and response.text else ""
+                    out = response.text.strip() if hasattr(response, 'text') and response.text else ""
                 # Success
                 break
-        except Exception as exc:
+            except Exception as exc:
                 last_error = str(exc)
                 # Transient error handling with exponential backoff + jitter
                 # Fallback to generic backoff even if exception types aren't available
