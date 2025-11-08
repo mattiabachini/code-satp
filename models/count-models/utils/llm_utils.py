@@ -36,6 +36,15 @@ INSTR = (
 # Optional toggle to enable few-shot prompting for T5 models
 USE_T5_FEWSHOT = False
 
+def set_t5_fewshot(enabled: bool) -> None:
+    """
+    Enable or disable few-shot prompting for T5 models at runtime.
+    
+    This allows notebooks to control the prompting style without editing this file.
+    """
+    global USE_T5_FEWSHOT
+    USE_T5_FEWSHOT = bool(enabled)
+
 def make_input(text: str) -> str:
     """Create input prompt for the model."""
     return f"{INSTR}\n\nText: {text}\nAnswer:"

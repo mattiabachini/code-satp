@@ -27,6 +27,7 @@ from .llm_utils import (
     run_t5_batch,
     run_openai_batch,
     run_gemini_batch,
+    set_t5_fewshot,
     already_done as llm_already_done
 )
 
@@ -56,6 +57,7 @@ __all__ = [
     'run_t5_batch',
     'run_openai_batch',
     'run_gemini_batch',
+    'set_t5_fewshot',
     'llm_already_done',
 ]
 
