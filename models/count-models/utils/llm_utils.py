@@ -39,6 +39,16 @@ def make_input(text: str) -> str:
     return f"{INSTR}\n\nText: {text}\nAnswer:"
 
 
+def make_input_t5(text: str) -> str:
+    """
+    Create a T5-friendly prompt (simpler seq2seq style).
+    
+    Flan-T5 models typically perform best with a plain instruction followed by context,
+    without JSON schema or chat-style scaffolding.
+    """
+    return f"How many people were killed? Answer with a single integer.\n\n{text}"
+
+
 def parse_fatalities(s: str) -> int:
     """
     Parse fatalities count from model output.
@@ -57,9 +67,15 @@ def parse_fatalities(s: str) -> int:
     if m:
         return max(0, int(m.group(1)))
     
-    # Try to find any number in the output
-    m = re.search(r'-?\d+', s or "")
-    return max(0, int(m.group(0))) if m else 0
+    # Otherwise scan for integers and prefer small, plausible casualty counts
+    # This avoids accidentally capturing unrelated large numbers (years, ids, etc.).
+    nums = [int(x) for x in re.findall(r'\d+', s or "")]
+    if not nums:
+        return 0
+    plausible = [n for n in nums if 0 <= n <= 200]
+    if plausible:
+        return plausible[0]
+    return max(0, nums[0])
 
 
 def time_inference_call(inference_func: Callable, *args, **kwargs) -> Tuple[Any, Dict[str, float]]:
@@ -299,16 +315,24 @@ def run_t5_batch(
         if use_simple_progress:
             print(f"  Processing {i + 1}/{total}...", end='\r', flush=True)
         
-        # Use standardized basic prompt for all models (fair comparison)
-        prompt = make_input(t)
+        # Use a T5-specific, simple prompt format
+        prompt = make_input_t5(t)
         encoded = tok(
             prompt,
             return_tensors="pt",
             truncation=True,
             max_length=max_input_tokens,
+            return_overflowing_tokens=True,
         )
-        if encoded.get("overflowing_tokens"):
+        # Robust truncation detection across tokenizer versions
+        if encoded.get("overflowing_tokens") is not None:
             truncated += 1
+        else:
+            try:
+                if encoded["input_ids"].shape[-1] >= max_input_tokens:
+                    truncated += 1
+            except Exception:
+                pass
         tensor_inputs = {
             k: v.to(model.device)
             for k, v in encoded.items()
@@ -431,7 +455,8 @@ def run_gemini_batch(
     model_name: str = "gemini-1.5-flash-latest",
     max_output_tokens: int = 50,
     rate_limit_delay: float = 0.1,
-    show_progress: bool = True
+    show_progress: bool = True,
+    max_retries: int = 4,
 ):
     """
     Run inference on a batch of texts using Google Gemini API.
@@ -443,6 +468,7 @@ def run_gemini_batch(
         max_output_tokens: Maximum tokens to generate
         rate_limit_delay: Delay between requests (seconds)
         show_progress: Whether to show progress
+        max_retries: Maximum retries per item on transient errors
         
     Returns:
         list: List of model output strings
@@ -496,52 +522,66 @@ def run_gemini_batch(
     outs = []
     total = len(texts)
     errors = 0
+    diagnostics: List[Dict[str, Any]] = []
     
     for i, text in enumerate(texts):
         if show_progress and (i + 1) % 10 == 0:
             print(f"  Processing {i + 1}/{total}...", end='\r')
         
-        try:
-            prompt = make_input(text)
-            response = model.generate_content(
-                prompt,
-                generation_config={
-                    "max_output_tokens": max_output_tokens,
-                    "temperature": 0.0
-                }
-            )
-            # Handle response based on finish_reason
-            # finish_reason: 1=STOP (normal), 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
-            if hasattr(response, 'candidates') and response.candidates:
-                candidate = response.candidates[0]
-                if hasattr(candidate, 'finish_reason') and candidate.finish_reason == 2:
-                    # MAX_TOKENS - try to get partial content or fail gracefully
-                    if hasattr(candidate, 'content') and candidate.content.parts:
-                        out = candidate.content.parts[0].text.strip()
+        out = ""
+        finish_reason = None
+        last_error: Optional[str] = None
+        for attempt in range(max_retries):
+            try:
+                prompt = make_input(text)
+                response = model.generate_content(
+                    prompt,
+                    generation_config={
+                        "max_output_tokens": max_output_tokens,
+                        "temperature": 0.0
+                    }
+                )
+                # Decode response based on finish_reason
+                # finish_reason: 1=STOP, 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
+                if hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    finish_reason = getattr(candidate, 'finish_reason', None)
+                    if finish_reason == 2:
+                        # MAX_TOKENS - try to keep whatever text we have
+                        if hasattr(candidate, 'content') and candidate.content.parts:
+                            out = candidate.content.parts[0].text.strip()
+                        else:
+                            out = ""
+                    elif hasattr(response, 'text') and response.text:
+                        out = response.text.strip()
                     else:
-                        # Don't print warning here to avoid disrupting progress bar
-                        errors += 1
                         out = ""
-                elif hasattr(response, 'text') and response.text:
-                    out = response.text.strip()
                 else:
-                    out = ""
-            else:
-                out = response.text.strip() if hasattr(response, 'text') and response.text else ""
-            outs.append(out)
-        except Exception as exc:
-            if google_api_exceptions and isinstance(exc, google_api_exceptions.NotFound):
-                raise RuntimeError(
-                    f"Gemini model '{model_name}' is not available for generate_content in this project/API version. "
-                    "Upgrade to the latest google-generativeai package (pip install --upgrade google-generativeai) "
-                    "or switch to a supported model such as 'gemini-1.0-pro-latest'."
-                ) from exc
-            if google_api_exceptions and isinstance(exc, google_api_exceptions.GoogleAPIError):
-                print(f"\n  Gemini API error on item {i + 1}: {exc}")
-            else:
-                print(f"\n  Error on item {i + 1}: {exc}")
-            outs.append("")  # Empty string on error
+                    out = response.text.strip() if hasattr(response, 'text') and response.text else ""
+                # Success
+                break
+            except Exception as exc:
+                last_error = str(exc)
+                # Transient error handling with exponential backoff + jitter
+                # Fallback to generic backoff even if exception types aren't available
+                base = 0.5
+                sleep_s = base * (2 ** attempt)
+                try:
+                    import random  # local import to avoid top-level dependency in constrained envs
+                    sleep_s += random.random() * 0.2
+                except Exception:
+                    pass
+                time.sleep(sleep_s)
+        if not out and last_error:
+            # Only count as error if we end up with empty output
             errors += 1
+        outs.append(out.strip())
+        diagnostics.append({
+            "index": i,
+            "len_chars": len(text or ""),
+            "finish_reason": finish_reason,
+            "error": last_error,
+        })
         
         # Rate limiting
         if rate_limit_delay > 0:
@@ -552,6 +592,12 @@ def run_gemini_batch(
     
     if errors > 0:
         print(f"⚠️  Warning: {errors} errors occurred during API calls")
+        # Print a small sample of diagnostics to aid debugging without overwhelming output
+        sample = [d for d in diagnostics if d.get("error")][:5]
+        if sample:
+            print("  Example error diagnostics (up to 5):")
+            for d in sample:
+                print(f"   - idx={d['index']}, len={d['len_chars']}, error={d['error']}")
     
     return outs
 
