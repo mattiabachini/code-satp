@@ -5,12 +5,19 @@ import re
 import time
 from typing import List, Optional
 from pathlib import Path
+import importlib
+
+try:
+    from tqdm.auto import tqdm
+except ImportError:  # pragma: no cover - optional dependency
+    tqdm = None
 
 import torch
 from transformers import (
     AutoTokenizer, 
     AutoModelForCausalLM, 
-    AutoModelForSeq2SeqLM
+    AutoModelForSeq2SeqLM,
+    BitsAndBytesConfig,
 )
 from huggingface_hub.utils import GatedRepoError
 
@@ -88,19 +95,31 @@ def load_causal(model_id: str, token: Optional[str] = None):
     """
     hf_token = _resolve_hf_token(token)
 
+    quantization_config = None
+    if USE_4BIT:
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=DTYPE,
+        )
+
     try:
         tok = AutoTokenizer.from_pretrained(
             model_id,
             use_fast=True,
             token=hf_token
         )
+        model_kwargs = {
+            "device_map": "auto",
+            "token": hf_token,
+        }
+        if quantization_config:
+            model_kwargs["quantization_config"] = quantization_config
+        else:
+            model_kwargs["dtype"] = DTYPE
+
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
-            device_map="auto",
-            torch_dtype=DTYPE,
-            load_in_4bit=USE_4BIT,
-            bnb_4bit_compute_dtype=DTYPE if USE_4BIT else None,
-            token=hf_token
+            **model_kwargs,
         )
     except GatedRepoError as exc:
         hint = (
@@ -130,7 +149,7 @@ def load_t5(model_id: str):
     model = AutoModelForSeq2SeqLM.from_pretrained(
         model_id,
         device_map="auto",
-        torch_dtype=DTYPE
+        dtype=DTYPE
     )
     return tok, model
 
@@ -156,12 +175,32 @@ def run_causal_batch(
     Returns:
         list: List of model output strings
     """
+    if hasattr(model, "generation_config"):
+        try:
+            model.generation_config.do_sample = False
+        except AttributeError:
+            pass
+        try:
+            if getattr(model.generation_config, "temperature", None) not in (None, 1.0):
+                model.generation_config.temperature = 1.0
+        except AttributeError:
+            pass
+
     outs = []
     total = len(texts)
+
+    progress_bar = None
+    use_simple_progress = False
+    if show_progress and total > 0:
+        if tqdm is not None:
+            progress_bar = tqdm(total=total, desc="Generating", leave=False)
+        else:
+            use_simple_progress = True
+            print("  Processing 0/{}...".format(total), end='\r', flush=True)
     
     for i, t in enumerate(texts):
-        if show_progress and (i + 1) % 10 == 0:
-            print(f"  Processing {i + 1}/{total}...", end='\r')
+        if use_simple_progress:
+            print(f"  Processing {i + 1}/{total}...", end='\r', flush=True)
         
         # Use chat template if available (for instruction-tuned models)
         if hasattr(tok, "apply_chat_template"):
@@ -181,7 +220,7 @@ def run_causal_batch(
         gen = model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
-            temperature=0.0,
+            do_sample=False,
             pad_token_id=tok.eos_token_id
         )
         out = tok.decode(
@@ -189,8 +228,13 @@ def run_causal_batch(
             skip_special_tokens=True
         ).strip()
         outs.append(out)
+
+        if progress_bar is not None:
+            progress_bar.update(1)
     
-    if show_progress:
+    if progress_bar is not None:
+        progress_bar.close()
+    elif show_progress and total > 0:
         print(f"  Completed {total}/{total}      ")
     
     return outs
@@ -202,6 +246,7 @@ def run_t5_batch(
     model, 
     texts: List[str], 
     max_new_tokens: int = 32,
+    max_input_tokens: int = 512,
     show_progress: bool = True
 ):
     """
@@ -212,6 +257,7 @@ def run_t5_batch(
         model: T5 seq2seq model
         texts: List of input texts
         max_new_tokens: Maximum tokens to generate
+        max_input_tokens: Maximum tokens for encoder input (truncates beyond limit)
         show_progress: Whether to show progress
         
     Returns:
@@ -219,23 +265,50 @@ def run_t5_batch(
     """
     outs = []
     total = len(texts)
+    truncated = 0
+
+    progress_bar = None
+    use_simple_progress = False
+    if show_progress and total > 0:
+        if tqdm is not None:
+            progress_bar = tqdm(total=total, desc="Generating", leave=False)
+        else:
+            use_simple_progress = True
+            print("  Processing 0/{}...".format(total), end='\r', flush=True)
     
     for i, t in enumerate(texts):
-        if show_progress and (i + 1) % 10 == 0:
-            print(f"  Processing {i + 1}/{total}...", end='\r')
+        if use_simple_progress:
+            print(f"  Processing {i + 1}/{total}...", end='\r', flush=True)
         
         prompt = f"Extract deaths as JSON.\n\n{make_input(t)}"
-        inputs = tok(prompt, return_tensors="pt").to(model.device)
+        inputs = tok(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_input_tokens,
+            return_overflowing_tokens=True,
+        )
+        if inputs.get("overflowing_tokens"):
+            truncated += 1
+        tensor_inputs = {k: v.to(model.device) for k, v in inputs.items() if isinstance(v, torch.Tensor)}
         gen = model.generate(
-            **inputs,
+            **tensor_inputs,
             max_new_tokens=max_new_tokens,
-            temperature=0.0
+            do_sample=False
         )
         out = tok.decode(gen[0], skip_special_tokens=True).strip()
         outs.append(out)
+
+        if progress_bar is not None:
+            progress_bar.update(1)
     
-    if show_progress:
+    if progress_bar is not None:
+        progress_bar.close()
+    elif show_progress and total > 0:
         print(f"  Completed {total}/{total}      ")
+
+    if truncated > 0:
+        print(f"⚠️  Warning: {truncated} input(s) truncated to {max_input_tokens} tokens.")
     
     return outs
 
@@ -332,7 +405,7 @@ def run_openai_batch(
 def run_gemini_batch(
     texts: List[str],
     api_key: Optional[str] = None,
-    model_name: str = "gemini-1.5-flash",
+    model_name: str = "gemini-1.5-flash-latest",
     max_output_tokens: int = 50,
     rate_limit_delay: float = 0.1,
     show_progress: bool = True
@@ -372,14 +445,30 @@ def run_gemini_batch(
             "Set GEMINI_API_KEY environment variable or add 'gemini_api_key' to Colab secrets."
         )
     
+    google_api_exceptions = None
+
     try:
         import google.generativeai as genai
+        try:
+            google_api_exceptions = importlib.import_module("google.api_core.exceptions")
+        except ImportError:  # pragma: no cover - optional dependency
+            google_api_exceptions = None
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name)
     except ImportError:
         raise ImportError(
             "google-generativeai package not installed. Install with: pip install google-generativeai"
         )
+    except Exception as exc:
+        if google_api_exceptions and isinstance(exc, google_api_exceptions.GoogleAPIError):
+            raise RuntimeError(
+                f"Failed to initialize Gemini model '{model_name}'. "
+                "If you are using Gemini 1.5 models, ensure your account has access and "
+                "that you are on google-generativeai>=0.7.0."
+            ) from exc
+        raise RuntimeError(
+            f"Failed to initialize Gemini client: {exc}"
+        ) from exc
     
     outs = []
     total = len(texts)
@@ -400,8 +489,17 @@ def run_gemini_batch(
             )
             out = response.text.strip() if response.text else ""
             outs.append(out)
-        except Exception as e:
-            print(f"\n  Error on item {i + 1}: {e}")
+        except Exception as exc:
+            if google_api_exceptions and isinstance(exc, google_api_exceptions.NotFound):
+                raise RuntimeError(
+                    f"Gemini model '{model_name}' is not available for generate_content in this project/API version. "
+                    "Upgrade to the latest google-generativeai package (pip install --upgrade google-generativeai) "
+                    "or switch to a supported model such as 'gemini-1.0-pro-latest'."
+                ) from exc
+            if google_api_exceptions and isinstance(exc, google_api_exceptions.GoogleAPIError):
+                print(f"\n  Gemini API error on item {i + 1}: {exc}")
+            else:
+                print(f"\n  Error on item {i + 1}: {exc}")
             outs.append("")  # Empty string on error
             errors += 1
         
