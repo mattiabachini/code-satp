@@ -29,7 +29,12 @@ from .data_utils import (
     tokenize_for_regression,
     tokenize_qa
 )
-from .model_utils import PoissonRegressionModel, extract_qa_answer
+from .model_utils import (
+    PoissonRegressionModel, 
+    extract_qa_answer, 
+    run_seq2seq_location_model,
+    run_flan_t5_xl_lora_location_model
+)
 from .training_utils import (
     create_seq2seq_training_args,
     create_regression_training_args,
@@ -65,6 +70,8 @@ __all__ = [
     # Model utilities
     'PoissonRegressionModel',
     'extract_qa_answer',
+    'run_seq2seq_location_model',
+    'run_flan_t5_xl_lora_location_model',
     # Training utilities
     'create_seq2seq_training_args',
     'create_regression_training_args',

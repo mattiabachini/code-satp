@@ -2,6 +2,35 @@
 
 import re
 
+import pandas as pd
+
+
+def build_structured_location(row):
+    """
+    Build structured location string from component columns.
+
+    Args:
+        row: Pandas Series with location fields (state, district, village_name, other_locations).
+
+    Returns:
+        Structured location string with labeled components, or empty string if no components present.
+    """
+    parts = []
+
+    if pd.notna(row.get('state')) and str(row.get('state')).strip():
+        parts.append(f"state: {str(row['state']).strip()}")
+
+    if pd.notna(row.get('district')) and str(row.get('district')).strip():
+        parts.append(f"district: {str(row['district']).strip()}")
+
+    if pd.notna(row.get('village_name')) and str(row.get('village_name')).strip():
+        parts.append(f"village: {str(row['village_name']).strip()}")
+
+    if pd.notna(row.get('other_locations')) and str(row.get('other_locations')).strip():
+        parts.append(f"other_locations: {str(row['other_locations']).strip()}")
+
+    return ', '.join(parts) if parts else ''
+
 
 def prepare_seq2seq_data(df, model_type='nt5'):
     """
@@ -33,6 +62,77 @@ def prepare_seq2seq_data(df, model_type='nt5'):
     return {'input': inputs, 'target': targets}
 
 
+def prepare_location_seq2seq_data(df):
+    """
+    Prepare data for structured location extraction seq2seq tasks.
+
+    Args:
+        df: DataFrame with location fields and incident metadata.
+
+    Returns:
+        dict with 'input' and 'target' text plus associated metadata columns.
+    """
+    inputs = [
+        (
+            "Extract location hierarchy from incident: "
+            f"{summary}\nFormat: state: <name>, district: <name>, "
+            "village: <name>, other_locations: <name>. "
+            "Use exact format with labels. Omit missing levels."
+        )
+        for summary in df['incident_summary']
+    ]
+    targets = df['human_annotated_location'].tolist()
+
+    dates = []
+    for d in df['date']:
+        if pd.isna(d):
+            dates.append(None)
+        else:
+            try:
+                dates.append(pd.to_datetime(d).strftime('%Y-%m-%d'))
+            except Exception:
+                dates.append(None)
+
+    incident_numbers = [str(x) if pd.notna(x) else None for x in df['incident_number']]
+    incident_summaries = [str(x) if pd.notna(x) else None for x in df['incident_summary']]
+
+    return {
+        'input': inputs,
+        'target': targets,
+        'date': dates,
+        'incident_number': incident_numbers,
+        'incident_summary': incident_summaries,
+    }
+
+
+def preview_location_examples(df, title, num_examples=3, text_limit=200):
+    """
+    Print sample incidents with location annotations for quick inspection.
+
+    Args:
+        df: DataFrame containing incident data.
+        title: Heading to display before the examples.
+        num_examples: Number of rows to show.
+        text_limit: Max characters to display from incident_summary.
+    """
+    print(f"\n{title}")
+    print("=" * 80)
+
+    for _, row in df.head(num_examples).iterrows():
+        summary = row.get('incident_summary', '') or ''
+        if isinstance(summary, str) and len(summary) > text_limit:
+            summary = summary[:text_limit] + "..."
+
+        print(f"Date: {row.get('date')}")
+        print(f"State: {row.get('state')}")
+        print(f"District: {row.get('district')}")
+        print(f"Village: {row.get('village_name')}")
+        print(f"Other Locations: {row.get('other_locations')}")
+        print(f"Structured Labels: {row.get('human_annotated_location')}")
+        print(f"Incident Summary: {summary}")
+        print("-" * 80)
+
+
 def prepare_regression_data(df):
     """
     Prepare data for regression models (DistilBERT-Poisson).
@@ -49,7 +149,7 @@ def prepare_regression_data(df):
     }
 
 
-def tokenize_seq2seq(examples, tokenizer, max_input_length=512, max_target_length=10):
+def tokenize_seq2seq(examples, tokenizer, max_input_length=512, max_target_length=128):
     """
     Tokenize inputs and targets for seq2seq models.
     

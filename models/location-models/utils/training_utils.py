@@ -11,7 +11,8 @@ def create_seq2seq_training_args(
     learning_rate=3e-5,
     num_epochs=3,
     seed=42,
-    generation_max_length=32
+    generation_max_length=128,
+    generation_num_beams=None
 ):
     """
     Create standard Seq2SeqTrainingArguments for seq2seq models.
@@ -22,7 +23,8 @@ def create_seq2seq_training_args(
         learning_rate: Learning rate for optimizer
         num_epochs: Number of training epochs
         seed: Random seed for reproducibility
-        generation_max_length: Maximum length for generated outputs during evaluation (default: 32, suitable for most structured extraction tasks)
+        generation_max_length: Maximum length for generated outputs during evaluation (default: 128, suitable for location extraction tasks)
+        generation_num_beams: Number of beams for beam search during generation (default: None, uses greedy decoding)
         
     Returns:
         Seq2SeqTrainingArguments object
@@ -31,28 +33,34 @@ def create_seq2seq_training_args(
     use_bf16 = torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8
     use_fp16 = torch.cuda.is_available() and not use_bf16
 
-    return Seq2SeqTrainingArguments(
-        output_dir=output_dir,
-        eval_strategy="epoch",
-        save_strategy="epoch",
-        learning_rate=learning_rate,
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
-        num_train_epochs=num_epochs,
-        weight_decay=0.01,
-        save_total_limit=1,
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
-        predict_with_generate=True,
-        generation_max_length=generation_max_length,
-        logging_steps=50,
-        fp16=use_fp16,
-        bf16=use_bf16,
-        tf32=True,
-        optim="adafactor",
-        report_to="none",
-        seed=seed
-    )
+    args_dict = {
+        'output_dir': output_dir,
+        'eval_strategy': "epoch",
+        'save_strategy': "epoch",
+        'learning_rate': learning_rate,
+        'per_device_train_batch_size': batch_size,
+        'per_device_eval_batch_size': batch_size,
+        'num_train_epochs': num_epochs,
+        'weight_decay': 0.01,
+        'save_total_limit': 1,
+        'load_best_model_at_end': True,
+        'metric_for_best_model': "eval_loss",
+        'predict_with_generate': True,
+        'generation_max_length': generation_max_length,
+        'logging_steps': 50,
+        'fp16': use_fp16,
+        'bf16': use_bf16,
+        'tf32': True,
+        'optim': "adafactor",
+        'report_to': "none",
+        'seed': seed
+    }
+    
+    # Add generation_num_beams if specified
+    if generation_num_beams is not None:
+        args_dict['generation_num_beams'] = generation_num_beams
+    
+    return Seq2SeqTrainingArguments(**args_dict)
 
 
 def create_regression_training_args(
