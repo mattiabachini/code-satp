@@ -241,7 +241,7 @@ def run_seq2seq_location_model(
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         data_collator=data_collator,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=2)]
     )
     
@@ -438,7 +438,7 @@ def run_flan_t5_xl_lora_location_model(
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         data_collator=data_collator,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=2)]
     )
     

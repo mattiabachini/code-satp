@@ -15,6 +15,20 @@ def parse_structured_location(text):
     if not text or text.strip() == '':
         return location_dict
     
+    # Normalize and sanitize to handle tokenizer-specific artifacts (e.g., zero-width chars)
+    try:
+        import unicodedata
+        import re
+        # Unicode normalization (compatibility decomposition + compose)
+        text = unicodedata.normalize('NFKC', text)
+        # Remove zero-width characters (ZWSP, ZWJ, ZWNJ) and BOM/NO-BREAK (U+FEFF)
+        text = re.sub(r'[\u200B-\u200D\uFEFF]', '', text)
+        # Standardize common fullwidth punctuation to ASCII
+        text = text.replace('：', ':').replace('，', ',')
+    except Exception:
+        # If normalization fails for any reason, continue with original text
+        pass
+    
     # Split by comma and parse each part
     parts = [part.strip() for part in text.split(',')]
     for part in parts:
