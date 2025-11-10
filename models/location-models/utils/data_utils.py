@@ -133,7 +133,13 @@ def prepare_regression_data(df):
     }
 
 
-def tokenize_seq2seq(examples, tokenizer, max_input_length=512, max_target_length=128):
+def tokenize_seq2seq(
+    examples,
+    tokenizer,
+    max_input_length=512,
+    max_target_length=128,
+    padding_strategy='max_length',
+):
     """
     Tokenize inputs and targets for seq2seq models.
     
@@ -150,7 +156,7 @@ def tokenize_seq2seq(examples, tokenizer, max_input_length=512, max_target_lengt
         examples['input'], 
         max_length=max_input_length, 
         truncation=True, 
-        padding='max_length'
+        padding=padding_strategy
     )
     
     # Encode targets using text_target to avoid deprecated as_target_tokenizer()
@@ -158,7 +164,7 @@ def tokenize_seq2seq(examples, tokenizer, max_input_length=512, max_target_lengt
         text_target=examples['target'],
         max_length=max_target_length, 
         truncation=True, 
-        padding='max_length'
+        padding=padding_strategy
     )
     
     # Replace padding token id's in the labels with -100 so they are ignored by the loss
@@ -195,6 +201,7 @@ def make_tokenized_seq2seq_datasets(
     test_dict: dict,
     max_input_length: int = 512,
     max_target_length: int = 128,
+    padding_strategy: str = 'max_length',
 ):
     """
     Create tokenized HuggingFace Datasets for a specific seq2seq model.
@@ -209,6 +216,7 @@ def make_tokenized_seq2seq_datasets(
         test_dict: Dict with 'input' and 'target' for the test split
         max_input_length: Max number of tokens for inputs
         max_target_length: Max number of tokens for targets
+        padding_strategy: Padding strategy passed to the tokenizer ('max_length', 'longest', etc.)
     
     Returns:
         (train_dataset, val_dataset, test_dataset) tuple of tokenized Datasets
@@ -225,6 +233,7 @@ def make_tokenized_seq2seq_datasets(
             tokenizer=tokenizer,
             max_input_length=max_input_length,
             max_target_length=max_target_length,
+            padding_strategy=padding_strategy,
         )
 
     train_dataset = Dataset.from_dict(train_dict).map(
