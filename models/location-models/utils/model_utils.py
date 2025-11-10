@@ -233,19 +233,20 @@ def run_seq2seq_location_model(
     if isinstance(label_ids, tuple):
         label_ids = label_ids[0]
 
-    # Ensure predictions/labels are integer arrays before decoding
-    predicted_ids = np.asarray(predicted_ids)
-    label_ids = np.asarray(label_ids)
+    # Ensure predictions/labels are sequences of integers before decoding
+    def _to_int_sequences(seqs):
+        cleaned = []
+        for seq in seqs:
+            arr = np.asarray(seq)
+            if np.issubdtype(arr.dtype, np.floating):
+                arr = np.rint(arr).astype(np.int32)
+            else:
+                arr = arr.astype(np.int32)
+            cleaned.append(arr)
+        return cleaned
 
-    if np.issubdtype(predicted_ids.dtype, np.floating):
-        predicted_ids = np.rint(predicted_ids).astype(np.int32)
-    else:
-        predicted_ids = predicted_ids.astype(np.int32)
-
-    if np.issubdtype(label_ids.dtype, np.floating):
-        label_ids = np.rint(label_ids).astype(np.int32)
-    else:
-        label_ids = label_ids.astype(np.int32)
+    predicted_ids = _to_int_sequences(predicted_ids)
+    label_ids = _to_int_sequences(label_ids)
     
     # Decode predictions and labels
     decoded_preds = tokenizer.batch_decode(predicted_ids, skip_special_tokens=True)
