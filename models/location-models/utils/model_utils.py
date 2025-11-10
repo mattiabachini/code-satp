@@ -197,7 +197,7 @@ def run_seq2seq_location_model(
     """
     # Import utilities here to avoid circular imports
     from .training_utils import create_seq2seq_training_args, cleanup_model
-    from .metrics_utils import compute_metrics, print_metrics
+    from .metrics_utils import compute_metrics, print_metrics, clean_location_text
     from .file_io import save_dataframe_csv, get_task_results_dir
     
     print("\n" + "="*80)
@@ -280,6 +280,9 @@ def run_seq2seq_location_model(
         tokenizer.decode([l for l in label if l != -100], skip_special_tokens=True)
         for label in label_ids
     ]
+    # Clean artifacts like [CLS]/[SEP], normalize punctuation/unicode for saving
+    decoded_preds = [clean_location_text(s) for s in decoded_preds]
+    decoded_labels = [clean_location_text(s) for s in decoded_labels]
     
     # Compute metrics using location-specific metrics
     metrics = compute_metrics(predicted_ids, label_ids, tokenizer)
@@ -477,6 +480,9 @@ def run_flan_t5_xl_lora_location_model(
         tokenizer.decode([l for l in label if l != -100], skip_special_tokens=True)
         for label in label_ids
     ]
+    # Clean artifacts like [CLS]/[SEP], normalize punctuation/unicode for saving
+    decoded_preds = [clean_location_text(s) for s in decoded_preds]
+    decoded_labels = [clean_location_text(s) for s in decoded_labels]
     
     # Compute metrics using location-specific metrics
     metrics = compute_metrics(predicted_ids, label_ids, tokenizer)

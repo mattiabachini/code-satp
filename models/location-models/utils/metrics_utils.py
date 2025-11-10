@@ -1,6 +1,33 @@
 """Utilities for computing and displaying location extraction evaluation metrics."""
 
 import numpy as np
+import re
+import unicodedata
+
+
+def clean_location_text(text: str) -> str:
+    """
+    Normalize and sanitize generated text to remove tokenizer artifacts.
+    - Unicode normalize (NFKC)
+    - Remove zero-width chars (U+200B..U+200D, U+FEFF)
+    - Standardize fullwidth punctuation (：，) to ASCII (: ,)
+    - Remove bracketed special tokens like [CLS], [SEP], [PAD], etc.
+    - Collapse whitespace
+    """
+    if not isinstance(text, str):
+        return text
+    # Unicode normalization
+    cleaned = unicodedata.normalize('NFKC', text)
+    # Remove zero-width characters
+    cleaned = re.sub(r'[\u200B-\u200D\uFEFF]', '', cleaned)
+    # Standardize common fullwidth punctuation
+    cleaned = cleaned.replace('：', ':').replace('，', ',')
+    # Remove bracketed tags like [CLS], [SEP], [PAD], [UNK], [BOS], [EOS]
+    cleaned = re.sub(r'\[[^\]\n\r]{1,10}\]', '', cleaned)
+    # Collapse repeated [SEP]-leftovers or stray commas/spaces
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    cleaned = cleaned.strip(' ,\t\n\r')
+    return cleaned
 
 
 def parse_structured_location(text):
@@ -15,19 +42,8 @@ def parse_structured_location(text):
     if not text or text.strip() == '':
         return location_dict
     
-    # Normalize and sanitize to handle tokenizer-specific artifacts (e.g., zero-width chars)
-    try:
-        import unicodedata
-        import re
-        # Unicode normalization (compatibility decomposition + compose)
-        text = unicodedata.normalize('NFKC', text)
-        # Remove zero-width characters (ZWSP, ZWJ, ZWNJ) and BOM/NO-BREAK (U+FEFF)
-        text = re.sub(r'[\u200B-\u200D\uFEFF]', '', text)
-        # Standardize common fullwidth punctuation to ASCII
-        text = text.replace('：', ':').replace('，', ',')
-    except Exception:
-        # If normalization fails for any reason, continue with original text
-        pass
+    # Normalize and sanitize common artifacts (incl. [CLS]/[SEP] tokens)
+    text = clean_location_text(text)
     
     # Split by comma and parse each part
     parts = [part.strip() for part in text.split(',')]
