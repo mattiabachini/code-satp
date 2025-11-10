@@ -70,7 +70,7 @@ def prepare_location_seq2seq_data(df):
         df: DataFrame with location fields and incident metadata.
 
     Returns:
-        dict with 'input' and 'target' text plus associated metadata columns.
+        dict with 'input' and 'target' text lists.
     """
     inputs = [
         (
@@ -83,25 +83,9 @@ def prepare_location_seq2seq_data(df):
     ]
     targets = df['human_annotated_location'].tolist()
 
-    dates = []
-    for d in df['date']:
-        if pd.isna(d):
-            dates.append(None)
-        else:
-            try:
-                dates.append(pd.to_datetime(d).strftime('%Y-%m-%d'))
-            except Exception:
-                dates.append(None)
-
-    incident_numbers = [str(x) if pd.notna(x) else None for x in df['incident_number']]
-    incident_summaries = [str(x) if pd.notna(x) else None for x in df['incident_summary']]
-
     return {
         'input': inputs,
         'target': targets,
-        'date': dates,
-        'incident_number': incident_numbers,
-        'incident_summary': incident_summaries,
     }
 
 
