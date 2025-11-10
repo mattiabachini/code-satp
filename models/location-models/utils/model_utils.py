@@ -11,6 +11,40 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 from datasets import Dataset
 
 
+def _to_int_sequences(seqs, vocab_size, pad_token_id=0):
+    """
+    Convert prediction sequences to valid token IDs.
+    
+    Handles potential issues with trainer.predict() outputs:
+    - Converts floating point arrays to integers
+    - Clamps values to valid vocabulary range [0, vocab_size)
+    - Replaces invalid tokens with pad_token_id
+    
+    Args:
+        seqs: List of prediction sequences (can be float or int arrays)
+        vocab_size: Size of tokenizer vocabulary
+        pad_token_id: Token ID to use for invalid tokens (default: 0)
+    
+    Returns:
+        List of lists containing valid integer token IDs
+    """
+    cleaned = []
+    for seq in seqs:
+        arr = np.asarray(seq)
+        if np.issubdtype(arr.dtype, np.floating):
+            arr = np.rint(arr)
+        
+        # Convert to int64 (larger range than int32)
+        arr = arr.astype(np.int64)
+        
+        # Replace invalid tokens with pad token
+        # Valid tokens are in range [0, vocab_size)
+        arr = np.where((arr < 0) | (arr >= vocab_size), pad_token_id, arr)
+        
+        cleaned.append(arr.tolist())
+    return cleaned
+
+
 class PoissonRegressionModel(torch.nn.Module):
     """
     DistilBERT-based Poisson regression model for count prediction.
@@ -233,20 +267,12 @@ def run_seq2seq_location_model(
     if isinstance(label_ids, tuple):
         label_ids = label_ids[0]
 
-    # Ensure predictions/labels are sequences of integers before decoding
-    def _to_int_sequences(seqs):
-        cleaned = []
-        for seq in seqs:
-            arr = np.asarray(seq)
-            if np.issubdtype(arr.dtype, np.floating):
-                arr = np.rint(arr).astype(np.int32)
-            else:
-                arr = arr.astype(np.int32)
-            cleaned.append(arr)
-        return cleaned
-
-    predicted_ids = _to_int_sequences(predicted_ids)
-    label_ids = _to_int_sequences(label_ids)
+    # Ensure predictions/labels are valid token IDs before decoding
+    vocab_size = len(tokenizer)
+    pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
+    
+    predicted_ids = _to_int_sequences(predicted_ids, vocab_size, pad_token_id)
+    label_ids = _to_int_sequences(label_ids, vocab_size, pad_token_id)
     
     # Decode predictions and labels
     decoded_preds = tokenizer.batch_decode(predicted_ids, skip_special_tokens=True)
@@ -431,6 +457,19 @@ def run_flan_t5_xl_lora_location_model(
     predictions = trainer.predict(test_dataset)
     predicted_ids = predictions.predictions
     label_ids = predictions.label_ids
+    
+    # Handle tuple outputs (e.g., when past key values are returned)
+    if isinstance(predicted_ids, tuple):
+        predicted_ids = predicted_ids[0]
+    if isinstance(label_ids, tuple):
+        label_ids = label_ids[0]
+    
+    # Ensure predictions/labels are valid token IDs before decoding
+    vocab_size = len(tokenizer)
+    pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
+    
+    predicted_ids = _to_int_sequences(predicted_ids, vocab_size, pad_token_id)
+    label_ids = _to_int_sequences(label_ids, vocab_size, pad_token_id)
     
     # Decode predictions and labels
     decoded_preds = tokenizer.batch_decode(predicted_ids, skip_special_tokens=True)
