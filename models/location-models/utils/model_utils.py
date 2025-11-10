@@ -208,7 +208,7 @@ def run_seq2seq_location_model(
         eval_dataset=val_dataset,
         data_collator=data_collator,
         tokenizer=tokenizer,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=2)]
     )
     
     print("Trainer configured")
@@ -226,6 +226,26 @@ def run_seq2seq_location_model(
     predictions = trainer.predict(test_dataset)
     predicted_ids = predictions.predictions
     label_ids = predictions.label_ids
+
+    # Handle tuple outputs (e.g., when past key values are returned)
+    if isinstance(predicted_ids, tuple):
+        predicted_ids = predicted_ids[0]
+    if isinstance(label_ids, tuple):
+        label_ids = label_ids[0]
+
+    # Ensure predictions/labels are integer arrays before decoding
+    predicted_ids = np.asarray(predicted_ids)
+    label_ids = np.asarray(label_ids)
+
+    if np.issubdtype(predicted_ids.dtype, np.floating):
+        predicted_ids = np.rint(predicted_ids).astype(np.int32)
+    else:
+        predicted_ids = predicted_ids.astype(np.int32)
+
+    if np.issubdtype(label_ids.dtype, np.floating):
+        label_ids = np.rint(label_ids).astype(np.int32)
+    else:
+        label_ids = label_ids.astype(np.int32)
     
     # Decode predictions and labels
     decoded_preds = tokenizer.batch_decode(predicted_ids, skip_special_tokens=True)
@@ -392,7 +412,7 @@ def run_flan_t5_xl_lora_location_model(
         eval_dataset=val_dataset,
         data_collator=data_collator,
         tokenizer=tokenizer,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=2)]
     )
     
     print("Trainer configured")
