@@ -32,6 +32,8 @@ def create_seq2seq_training_args(
     # Use bf16 on Ampere+ (e.g., A100) for speed+stability, otherwise fp16 on GPU
     use_bf16 = torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8
     use_fp16 = torch.cuda.is_available() and not use_bf16
+    # TF32 also requires Ampere or newer GPU
+    use_tf32 = torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8
 
     args_dict = {
         'output_dir': output_dir,
@@ -50,7 +52,7 @@ def create_seq2seq_training_args(
         'logging_steps': 50,
         'fp16': use_fp16,
         'bf16': use_bf16,
-        'tf32': True,
+        'tf32': use_tf32,
         'optim': "adafactor",
         'report_to': "none",
         'seed': seed
@@ -83,6 +85,9 @@ def create_regression_training_args(
     Returns:
         TrainingArguments object
     """
+    # TF32 requires Ampere or newer GPU
+    use_tf32 = torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8
+    
     return TrainingArguments(
         output_dir=output_dir,
         eval_strategy="epoch",
@@ -98,7 +103,7 @@ def create_regression_training_args(
         logging_steps=50,
         fp16=False,
         bf16=False,
-        tf32=True,
+        tf32=use_tf32,
         report_to="none",
         seed=seed
     )
@@ -127,6 +132,8 @@ def create_qa_training_args(
     # Use bf16 on Ampere+ (e.g., A100) for speed+stability, otherwise fp16 on GPU
     use_bf16 = torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8
     use_fp16 = torch.cuda.is_available() and not use_bf16
+    # TF32 also requires Ampere or newer GPU
+    use_tf32 = torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8
 
     return TrainingArguments(
         output_dir=output_dir,
@@ -143,7 +150,7 @@ def create_qa_training_args(
         logging_steps=50,
         fp16=use_fp16,
         bf16=use_bf16,
-        tf32=True,
+        tf32=use_tf32,
         report_to="none",
         seed=seed
     )

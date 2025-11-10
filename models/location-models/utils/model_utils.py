@@ -370,7 +370,7 @@ def run_flan_t5_xl_lora_location_model(
             get_peft_model,
             prepare_model_for_kbit_training,
         )
-        from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+        from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, BitsAndBytesConfig
         from transformers import DataCollatorForSeq2Seq, Seq2SeqTrainer
     except ImportError as e:
         print(f"❌ Error: {e}")
@@ -387,12 +387,18 @@ def run_flan_t5_xl_lora_location_model(
     print(f"Loading {model_id} with 4-bit quantization...")
     
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForSeq2SeqLM.from_pretrained(
-        model_id,
+    # Use BitsAndBytesConfig per transformers deprecation notice
+    bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
-        device_map="auto",
         bnb_4bit_quant_type="nf4",
         bnb_4bit_use_double_quant=True,
+        # Prefer bfloat16 for compute dtype when available
+        bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+    )
+    model = AutoModelForSeq2SeqLM.from_pretrained(
+        model_id,
+        quantization_config=bnb_config,
+        device_map="auto",
     )
     
     # Prepare model for k-bit training

@@ -154,10 +154,10 @@ def tokenize_seq2seq(examples, tokenizer, max_input_length=512, max_target_lengt
     )
     
     # Encode targets using text_target to avoid deprecated as_target_tokenizer()
-    target_encodings = tokenizer(
+        target_encodings = tokenizer(
         text_target=examples['target'],
-        max_length=max_target_length,
-        truncation=True,
+        max_length=max_target_length, 
+        truncation=True, 
         padding='max_length'
     )
     
