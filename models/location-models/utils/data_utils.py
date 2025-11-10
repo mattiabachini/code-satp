@@ -205,6 +205,57 @@ def tokenize_for_regression(examples, tokenizer, max_length=512):
     )
 
 
+def make_tokenized_seq2seq_datasets(
+    model_id: str,
+    train_dict: dict,
+    val_dict: dict,
+    test_dict: dict,
+    max_input_length: int = 512,
+    max_target_length: int = 128,
+):
+    """
+    Create tokenized HuggingFace Datasets for a specific seq2seq model.
+    
+    Tokenization is performed with the tokenizer that corresponds to the given model_id.
+    This prevents tokenizer/model mismatches when training multiple models in one notebook.
+    
+    Args:
+        model_id: HuggingFace model identifier (e.g., 'google/flan-t5-base', 'ai4bharat/IndicBARTSS')
+        train_dict: Dict with 'input' and 'target' for the training split
+        val_dict: Dict with 'input' and 'target' for the validation split
+        test_dict: Dict with 'input' and 'target' for the test split
+        max_input_length: Max number of tokens for inputs
+        max_target_length: Max number of tokens for targets
+    
+    Returns:
+        (train_dataset, val_dataset, test_dataset) tuple of tokenized Datasets
+    """
+    # Lazy imports to avoid hard dependency at import time
+    from transformers import AutoTokenizer
+    from datasets import Dataset
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+    def _map_fn(batch):
+        return tokenize_seq2seq(
+            batch,
+            tokenizer=tokenizer,
+            max_input_length=max_input_length,
+            max_target_length=max_target_length,
+        )
+
+    train_dataset = Dataset.from_dict(train_dict).map(
+        _map_fn, batched=True, remove_columns=['input', 'target']
+    )
+    val_dataset = Dataset.from_dict(val_dict).map(
+        _map_fn, batched=True, remove_columns=['input', 'target']
+    )
+    test_dataset = Dataset.from_dict(test_dict).map(
+        _map_fn, batched=True, remove_columns=['input', 'target']
+    )
+
+    return train_dataset, val_dataset, test_dataset
+
 def prepare_qa_data(df, question="How many people were killed?"):
     """
     Prepare data for question answering models.
