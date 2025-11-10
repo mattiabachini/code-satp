@@ -2,6 +2,7 @@
 transformers>=4.35.0
 datasets>=2.14.0
 accelerate>=0.33
+peft>=0.11.0
 evaluate>=0.4.0
 bitsandbytes>=0.43
 rapidfuzz>=3
