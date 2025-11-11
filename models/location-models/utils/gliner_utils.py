@@ -317,3 +317,54 @@ def batch_extract_locations(model, texts: List[str],
     
     return results
 
+
+def save_gliner_predictions_and_metrics(
+    model_name: str,
+    predictions: List[str],
+    ground_truth: List[str],
+    metrics: Dict,
+    test_data: List[Dict],
+    task_name: str,
+    save_dataframe_csv_func,
+) -> None:
+    """
+    Save GLiNER predictions and metrics to CSV files.
+    
+    This function provides a consistent interface for saving predictions,
+    matching the behavior of save_bert_predictions_and_metrics.
+    
+    Args:
+        model_name: Model identifier (e.g., 'gliner')
+        predictions: List of predicted location strings
+        ground_truth: List of ground truth location strings
+        metrics: Dict of evaluation metrics
+        test_data: Test dataset with metadata (incident_number, text, etc.)
+        task_name: Task name for organizing results
+        save_dataframe_csv_func: Function to save dataframes (from file_io)
+    """
+    import pandas as pd
+    
+    # Save predictions with incident_number and incident_summary
+    predictions_df = pd.DataFrame({
+        'incident_number': [ex['metadata']['incident_number'] for ex in test_data],
+        'incident_summary': [ex['text'] for ex in test_data],
+        'ground_truth': ground_truth,
+        'prediction': predictions,
+    })
+    save_dataframe_csv_func(predictions_df, f"{model_name}_predictions.csv", task_name)
+    
+    # Save metrics summary
+    metrics_df = pd.DataFrame([{
+        'model': model_name,
+        'exact_match': metrics['exact_match'],
+        'fuzzy_match': metrics['fuzzy_match'],
+        'micro_f1': metrics['micro_f1'],
+        'state_f1': metrics['per_level']['state']['f1'],
+        'district_f1': metrics['per_level']['district']['f1'],
+        'village_f1': metrics['per_level']['village']['f1'],
+        'other_locations_f1': metrics['per_level']['other_locations']['f1'],
+    }])
+    save_dataframe_csv_func(metrics_df, f"{model_name}_metrics.csv", task_name)
+    
+    print(f"✅ {model_name} predictions and metrics saved")
+
