@@ -59,7 +59,12 @@ BERT_MODEL_CONFIGS = {
 }
 
 
-def prepare_ner_dataset(ner_data: List[Dict], tokenizer, label_list: List[str] = None) -> Dataset:
+def prepare_ner_dataset(
+    ner_data: List[Dict],
+    tokenizer,
+    label_list: List[str] = None,
+    max_length: int = 512,
+) -> Dataset:
     """
     Prepare NER data for training/evaluation.
     
@@ -85,7 +90,9 @@ def prepare_ner_dataset(ner_data: List[Dict], tokenizer, label_list: List[str] =
     
     # Tokenize and align labels
     tokenized_dataset = dataset.map(
-        lambda examples: tokenize_and_align_labels(examples, tokenizer, label_list),
+        lambda examples: tokenize_and_align_labels(
+            examples, tokenizer, label_list, max_length=max_length
+        ),
         batched=True,
         remove_columns=['text', 'entities'],
     )
@@ -144,8 +151,12 @@ def train_span_ner_model(
     )
     
     # Prepare datasets
-    train_dataset = prepare_ner_dataset(train_data, tokenizer, label_list)
-    val_dataset = prepare_ner_dataset(val_data, tokenizer, label_list)
+    train_dataset = prepare_ner_dataset(
+        train_data, tokenizer, label_list, max_length=max_length
+    )
+    val_dataset = prepare_ner_dataset(
+        val_data, tokenizer, label_list, max_length=max_length
+    )
     
     # Data collator
     data_collator = DataCollatorForTokenClassification(tokenizer)
@@ -277,6 +288,7 @@ def predict_structured_locations(
     texts: List[str],
     device: Optional[torch.device] = None,
     batch_size: int = 16,
+    max_length: int = 512,
     apply_nms: bool = True,
 ) -> List[str]:
     """
@@ -295,9 +307,12 @@ def predict_structured_locations(
     """
     # Get entities
     all_entities = predict_ner_batch(
-        model, tokenizer, texts,
+        model,
+        tokenizer,
+        texts,
         device=device,
         batch_size=batch_size,
+        max_length=max_length,
         apply_nms=apply_nms,
     )
     
@@ -320,6 +335,7 @@ def evaluate_ner_model(
     test_data: List[Dict],
     device: Optional[torch.device] = None,
     batch_size: int = 16,
+    max_length: int = 512,
     fuzzy_threshold: int = 85,
 ) -> Dict[str, Any]:
     """
@@ -341,9 +357,12 @@ def evaluate_ner_model(
     
     # Get predictions
     predicted_structured = predict_structured_locations(
-        model, tokenizer, texts,
+        model,
+        tokenizer,
+        texts,
         device=device,
         batch_size=batch_size,
+        max_length=max_length,
     )
     
     # Build ground truth structured strings
@@ -505,6 +524,7 @@ def run_span_ner_model(
     num_epochs: int = 3,
     batch_size: int = 16,
     learning_rate: float = 5e-5,
+    max_length: int = 512,
     device: Optional[torch.device] = None,
 ) -> Dict[str, Any]:
     """
@@ -544,6 +564,7 @@ def run_span_ner_model(
         num_epochs=num_epochs,
         batch_size=batch_size,
         learning_rate=learning_rate,
+        max_length=max_length,
     )
     
     # Move to device if specified
@@ -558,6 +579,7 @@ def run_span_ner_model(
         test_data=test_data,
         device=device,
         batch_size=batch_size,
+        max_length=max_length,
     )
     
     # Print metrics
