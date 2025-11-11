@@ -1,7 +1,55 @@
 """Utilities for location extraction using LLMs (non-tokenized string outputs)."""
 
 import re
+import time
+from typing import List, Optional, Dict, Any
 from .metrics_utils import parse_structured_location, fuzzy_match
+
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = None
+
+import torch
+
+
+# ============================================================================
+# Prompt Creation for Location Extraction
+# ============================================================================
+
+# Instruction template for LLM location extraction (verbose for zero-shot)
+LOCATION_EXTRACTION_INSTRUCTION = (
+    "Extract the location hierarchy from this incident. "
+    "Return exactly in format: state: <name>, district: <name>, village: <name>, other_locations: <name>. "
+    "Use exact format with labels. Omit any missing administrative levels. "
+    "If no locations are mentioned, return an empty string."
+)
+
+
+def make_location_prompt(text: str) -> str:
+    """
+    Create a verbose prompt for LLM-based location extraction.
+    
+    This prompt is optimized for zero-shot inference with instruction-following LLMs.
+    It differs from seq2seq prompts (which use shorter formats for fine-tuning)
+    because LLMs need explicit, verbose instructions to understand the task.
+    
+    Args:
+        text: The incident summary text
+        
+    Returns:
+        Formatted prompt string ready for LLM inference
+        
+    Example:
+        >>> prompt = make_location_prompt("Maoists attacked in Sukma district...")
+        >>> print(prompt)
+        Extract the location hierarchy from this incident. Return exactly in format: ...
+        
+        Incident: Maoists attacked in Sukma district...
+        
+        Answer:
+    """
+    return f"{LOCATION_EXTRACTION_INSTRUCTION}\n\nIncident: {text}\n\nAnswer:"
 
 
 def parse_location_from_llm(text: str) -> dict:
@@ -336,4 +384,457 @@ def run_and_save_llm_location_results(
     print(f"✅ Saved metrics to: {metrics_path}")
     
     return results_df, metrics
+
+
+# ============================================================================
+# Location-Specific LLM Inference Runners
+# ============================================================================
+# These functions take pre-formatted prompts (not raw texts) and run inference
+# WITHOUT applying any additional prompt wrapping. This differs from the count-models
+# utilities which internally apply death-count prompts.
+
+
+@torch.inference_mode()
+def run_location_causal_batch(
+    tok,
+    model,
+    prompts: List[str],
+    max_new_tokens: int = 64,
+    max_input_tokens: int = 512,
+    batch_size: int = 16,
+    show_progress: bool = True
+):
+    """
+    Run inference on location extraction prompts using a causal LM with proper batching.
+    
+    NOTE: Takes PRE-FORMATTED prompts (already include location extraction instruction).
+    Does NOT apply any additional prompt wrapping (unlike count-models utilities).
+    
+    Performance optimizations:
+    - Batch processing (default 16-32 prompts at once) for GPU efficiency
+    - Truncated inputs (max_input_tokens=512) for speed
+    - Shorter outputs (max_new_tokens=64) - locations are typically short
+    
+    Args:
+        tok: Tokenizer
+        model: Causal language model
+        prompts: List of PRE-FORMATTED location extraction prompts
+        max_new_tokens: Maximum tokens to generate (default 64, locations are short)
+        max_input_tokens: Maximum input tokens (default 512, truncate long inputs)
+        batch_size: Number of prompts to process in parallel (default 16)
+        show_progress: Whether to show progress
+        
+    Returns:
+        list: List of model output strings
+    """
+    # Configure generation settings for deterministic output
+    if hasattr(model, "generation_config"):
+        try:
+            model.generation_config.do_sample = False
+        except AttributeError:
+            pass
+        try:
+            if getattr(model.generation_config, "temperature", None) not in (None, 1.0):
+                model.generation_config.temperature = 1.0
+        except AttributeError:
+            pass
+
+    # Ensure padding token is set
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+    
+    outs = []
+    total = len(prompts)
+    num_batches = (total + batch_size - 1) // batch_size
+
+    progress_bar = None
+    use_simple_progress = False
+    if show_progress and total > 0:
+        if tqdm is not None:
+            progress_bar = tqdm(total=total, desc="Generating", leave=False)
+        else:
+            use_simple_progress = True
+            print("  Processing 0/{}...".format(total), end='\r', flush=True)
+    
+    # Process in batches for GPU efficiency
+    for batch_idx in range(num_batches):
+        start_idx = batch_idx * batch_size
+        end_idx = min(start_idx + batch_size, total)
+        batch_prompts = prompts[start_idx:end_idx]
+        
+        if use_simple_progress:
+            print(f"  Processing batch {batch_idx + 1}/{num_batches} ({end_idx}/{total})...", end='\r', flush=True)
+        
+        # Tokenize batch with padding and truncation
+        inputs = tok(
+            batch_prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=max_input_tokens
+        ).to(model.device)
+        
+        # Generate for entire batch
+        gen = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            pad_token_id=tok.pad_token_id
+        )
+        
+        # Decode each output in the batch
+        for i in range(len(batch_prompts)):
+            # Extract only the generated tokens (skip input prompt)
+            input_len = inputs["input_ids"][i].shape[0]
+            out = tok.decode(
+                gen[i][input_len:], 
+                skip_special_tokens=True
+            ).strip()
+            outs.append(out)
+            
+            if progress_bar is not None:
+                progress_bar.update(1)
+    
+    if progress_bar is not None:
+        progress_bar.close()
+    elif show_progress and total > 0:
+        print(f"  Completed {total}/{total}      ")
+    
+    return outs
+
+
+@torch.inference_mode()
+def run_location_t5_batch(
+    tok,
+    model,
+    prompts: List[str],
+    max_new_tokens: int = 64,
+    max_input_tokens: int = 512,
+    batch_size: int = 16,
+    show_progress: bool = True
+):
+    """
+    Run inference on location extraction prompts using a T5 model with proper batching.
+    
+    NOTE: Takes PRE-FORMATTED prompts (already include location extraction instruction).
+    Does NOT apply any additional prompt wrapping (unlike count-models utilities).
+    
+    Performance optimizations:
+    - Batch processing (default 16-32 prompts at once) for GPU efficiency
+    - Truncated inputs (max_input_tokens=512) for speed
+    - Shorter outputs (max_new_tokens=64) - locations are typically short
+    
+    Args:
+        tok: Tokenizer
+        model: T5 seq2seq model
+        prompts: List of PRE-FORMATTED location extraction prompts
+        max_new_tokens: Maximum tokens to generate (default 64, locations are short)
+        max_input_tokens: Maximum tokens for encoder input (default 512)
+        batch_size: Number of prompts to process in parallel (default 16)
+        show_progress: Whether to show progress
+        
+    Returns:
+        list: List of model output strings
+    """
+    outs = []
+    total = len(prompts)
+    num_batches = (total + batch_size - 1) // batch_size
+
+    progress_bar = None
+    use_simple_progress = False
+    if show_progress and total > 0:
+        if tqdm is not None:
+            progress_bar = tqdm(total=total, desc="Generating", leave=False)
+        else:
+            use_simple_progress = True
+            print("  Processing 0/{}...".format(total), end='\r', flush=True)
+    
+    # Process in batches for GPU efficiency
+    for batch_idx in range(num_batches):
+        start_idx = batch_idx * batch_size
+        end_idx = min(start_idx + batch_size, total)
+        batch_prompts = prompts[start_idx:end_idx]
+        
+        if use_simple_progress:
+            print(f"  Processing batch {batch_idx + 1}/{num_batches} ({end_idx}/{total})...", end='\r', flush=True)
+        
+        # Tokenize batch with padding and truncation
+        encoded = tok(
+            batch_prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=max_input_tokens,
+        )
+        tensor_inputs = {
+            "input_ids": encoded["input_ids"].to(model.device),
+            "attention_mask": encoded["attention_mask"].to(model.device),
+        }
+        
+        # Generate for entire batch
+        gen = model.generate(
+            **tensor_inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=False
+        )
+        
+        # Decode each output in the batch
+        for i in range(len(batch_prompts)):
+            out = tok.decode(gen[i], skip_special_tokens=True).strip()
+            outs.append(out)
+            
+            if progress_bar is not None:
+                progress_bar.update(1)
+    
+    if progress_bar is not None:
+        progress_bar.close()
+    elif show_progress and total > 0:
+        print(f"  Completed {total}/{total}      ")
+    
+    return outs
+
+
+def run_location_openai_batch(
+    prompts: List[str],
+    api_key: Optional[str] = None,
+    model_name: str = "gpt-4o-mini",
+    max_tokens: int = 256,
+    rate_limit_delay: float = 0.1,
+    show_progress: bool = True
+):
+    """
+    Run inference on location extraction prompts using OpenAI API.
+    
+    NOTE: Takes PRE-FORMATTED prompts (already include location extraction instruction).
+    Does NOT apply any additional prompt wrapping (unlike count-models utilities).
+    
+    Args:
+        prompts: List of PRE-FORMATTED location extraction prompts
+        api_key: OpenAI API key
+        model_name: OpenAI model name
+        max_tokens: Maximum tokens to generate
+        rate_limit_delay: Delay between requests (seconds)
+        show_progress: Whether to show progress
+        
+    Returns:
+        list: List of model output strings
+    """
+    if api_key is None:
+        try:
+            from google.colab import userdata
+            api_key = userdata.get('openai_api_key')
+        except ImportError:
+            import os
+            api_key = os.environ.get('OPENAI_API_KEY')
+    
+    if not api_key:
+        raise ValueError(
+            "OpenAI API key not found. "
+            "Set OPENAI_API_KEY environment variable or add 'openai_api_key' to Colab secrets."
+        )
+    
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+    except ImportError:
+        raise ImportError(
+            "openai package not installed. Install with: pip install openai>=1.0.0"
+        )
+    
+    outs = []
+    total = len(prompts)
+    errors = 0
+
+    progress_bar = None
+    use_simple_progress = False
+    if show_progress and total > 0:
+        if tqdm is not None:
+            progress_bar = tqdm(total=total, desc="Generating (OpenAI)", leave=False)
+        else:
+            use_simple_progress = True
+            print(f"  Processing 0/{total}...", flush=True)
+    
+    for i, prompt in enumerate(prompts):
+        try:
+            # Use prompt as-is (already formatted by caller)
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=max_tokens,
+                temperature=0.0
+            )
+            out = response.choices[0].message.content.strip()
+            outs.append(out)
+        except Exception as e:
+            outs.append("")
+            errors += 1
+        
+        if progress_bar is not None:
+            progress_bar.update(1)
+        elif use_simple_progress:
+            print(f"  Processing {i + 1}/{total}...", flush=True)
+        
+        if rate_limit_delay > 0:
+            time.sleep(rate_limit_delay)
+    
+    if progress_bar is not None:
+        progress_bar.close()
+    
+    if show_progress:
+        print(f"  Completed {total}/{total} (errors: {errors})      ")
+    
+    if errors > 0:
+        print(f"⚠️  Warning: {errors} errors occurred during API calls")
+    
+    return outs
+
+
+def run_location_gemini_batch(
+    prompts: List[str],
+    api_key: Optional[str] = None,
+    model_name: str = "gemini-2.5-flash",
+    max_output_tokens: int = 256,
+    rate_limit_delay: float = 0.1,
+    show_progress: bool = True,
+    max_retries: int = 4,
+):
+    """
+    Run inference on location extraction prompts using Google Gemini API.
+    
+    NOTE: Takes PRE-FORMATTED prompts (already include location extraction instruction).
+    Does NOT apply any additional prompt wrapping (unlike count-models utilities).
+    
+    Args:
+        prompts: List of PRE-FORMATTED location extraction prompts
+        api_key: Gemini API key
+        model_name: Gemini model name
+        max_output_tokens: Maximum tokens to generate
+        rate_limit_delay: Delay between requests (seconds)
+        show_progress: Whether to show progress
+        max_retries: Maximum retries per item
+        
+    Returns:
+        list: List of model output strings
+    """
+    if api_key is None:
+        try:
+            from google.colab import userdata
+            api_key = userdata.get('gemini_api_key')
+        except ImportError:
+            import os
+            api_key = os.environ.get('GEMINI_API_KEY')
+    
+    if not api_key:
+        raise ValueError(
+            "Gemini API key not found. "
+            "Set GEMINI_API_KEY environment variable or add 'gemini_api_key' to Colab secrets."
+        )
+    
+    try:
+        import google.generativeai as genai
+        import importlib
+        google_api_exceptions = None
+        try:
+            google_api_exceptions = importlib.import_module("google.api_core.exceptions")
+        except ImportError:
+            pass
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name)
+    except ImportError:
+        raise ImportError(
+            "google-generativeai package not installed. Install with: pip install google-generativeai"
+        )
+    except Exception as exc:
+        if google_api_exceptions and isinstance(exc, google_api_exceptions.GoogleAPIError):
+            raise RuntimeError(
+                f"Failed to initialize Gemini model '{model_name}'. "
+                "Ensure your account has access and that you are on google-generativeai>=0.7.0."
+            ) from exc
+        raise
+    
+    outs = []
+    total = len(prompts)
+    errors = 0
+
+    progress_bar = None
+    use_simple_progress = False
+    if show_progress and total > 0:
+        if tqdm is not None:
+            progress_bar = tqdm(total=total, desc="Generating (Gemini)", leave=False)
+        else:
+            use_simple_progress = True
+            print(f"  Processing 0/{total}...", flush=True)
+    
+    # Configure generation (no JSON mode for location extraction)
+    gen_config: Dict[str, Any] = {
+        "max_output_tokens": max_output_tokens,
+        "temperature": 0.0,
+    }
+
+    # Configure permissive safety for violence
+    safety_settings = None
+    try:
+        from google.generativeai.types import HarmCategory, HarmBlockThreshold
+        safety_settings = [
+            {
+                "category": HarmCategory.HARM_CATEGORY_VIOLENCE,
+                "threshold": HarmBlockThreshold.BLOCK_NONE,
+            }
+        ]
+    except Exception:
+        pass
+    
+    for i, prompt in enumerate(prompts):
+        out = ""
+        last_error: Optional[str] = None
+        for attempt in range(max_retries):
+            try:
+                # Use prompt as-is (already formatted by caller)
+                response = model.generate_content(
+                    prompt,
+                    generation_config=gen_config,
+                    safety_settings=safety_settings
+                )
+                if hasattr(response, 'text') and response.text:
+                    out = response.text.strip()
+                elif hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, 'content') and candidate.content.parts:
+                        out = candidate.content.parts[0].text.strip()
+                break
+            except Exception as exc:
+                last_error = str(exc)
+                base = 0.5
+                sleep_s = base * (2 ** attempt)
+                try:
+                    import random
+                    sleep_s += random.random() * 0.2
+                except Exception:
+                    pass
+                time.sleep(sleep_s)
+        
+        if not out and last_error:
+            errors += 1
+        outs.append(out.strip())
+        
+        if progress_bar is not None:
+            progress_bar.update(1)
+        elif use_simple_progress:
+            print(f"  Processing {i + 1}/{total}...", flush=True)
+        
+        if rate_limit_delay > 0:
+            time.sleep(rate_limit_delay)
+    
+    if progress_bar is not None:
+        progress_bar.close()
+    
+    if show_progress:
+        print(f"  Completed {total}/{total} (errors: {errors})      ")
+    
+    if errors > 0:
+        print(f"⚠️  Warning: {errors} errors occurred during API calls")
+    
+    return outs
 
