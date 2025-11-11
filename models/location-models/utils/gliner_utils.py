@@ -1,0 +1,319 @@
+"""Utilities for zero-shot location extraction using GLiNER with slot-filling.
+
+GLiNER is a zero-shot NER model that can extract entities given natural language descriptions.
+This module provides inference and slot-filling logic to convert GLiNER predictions to
+the structured format used by other location extraction models.
+"""
+
+from typing import List, Dict, Optional, Tuple
+from collections import defaultdict
+import re
+
+
+# Label descriptions for GLiNER zero-shot inference
+LOCATION_LABELS = {
+    "STATE": "the Indian state or union territory where the event occurred",
+    "DISTRICT": "the district (administrative area level 2) where the event occurred",
+    "VILLAGE": "the village, town, or small settlement where the event occurred",
+    "OTHER_LOCATION": "any other geographic place mentioned that is not state, district, or village"
+}
+
+
+def predict_entities_gliner(model, text: str, labels: Dict[str, str] = None, threshold: float = 0.4) -> List[Dict]:
+    """
+    Run GLiNER zero-shot entity prediction on text.
+    
+    Args:
+        model: GLiNER model instance
+        text: Input text to extract entities from
+        labels: Dict mapping label names to descriptions (default: LOCATION_LABELS)
+        threshold: Minimum confidence threshold (default: 0.4)
+        
+    Returns:
+        List of entity dicts: [{"text": str, "label": str, "start": int, "end": int, "score": float}, ...]
+    """
+    if labels is None:
+        labels = LOCATION_LABELS
+    
+    # GLiNER expects just the label descriptions as a list
+    label_list = list(labels.keys())
+    
+    # Run prediction
+    predictions = model.predict_entities(text, label_list, threshold=threshold)
+    
+    # Standardize output format
+    entities = []
+    for pred in predictions:
+        entities.append({
+            'text': pred.get('text', ''),
+            'label': pred.get('label', ''),
+            'start': pred.get('start', 0),
+            'end': pred.get('end', 0),
+            'score': pred.get('score', 0.0)
+        })
+    
+    return entities
+
+
+def apply_label_specific_thresholds(entities: List[Dict], thresholds: Dict[str, float] = None) -> List[Dict]:
+    """
+    Filter entities by label-specific confidence thresholds.
+    
+    Args:
+        entities: List of entity predictions
+        thresholds: Dict mapping labels to threshold values
+                   (default: STATE=0.6, DISTRICT=0.55, VILLAGE=0.5, OTHER_LOCATION=0.4)
+        
+    Returns:
+        Filtered list of entities
+    """
+    if thresholds is None:
+        thresholds = {
+            'STATE': 0.6,
+            'DISTRICT': 0.55,
+            'VILLAGE': 0.5,
+            'OTHER_LOCATION': 0.4
+        }
+    
+    filtered = []
+    for entity in entities:
+        label = entity['label']
+        score = entity['score']
+        threshold = thresholds.get(label, 0.4)
+        
+        if score >= threshold:
+            filtered.append(entity)
+    
+    return filtered
+
+
+def apply_context_boosting(entities: List[Dict], text: str, boost_amount: float = 0.1) -> List[Dict]:
+    """
+    Boost scores for entities that have supporting context nearby.
+    
+    Args:
+        entities: List of entity predictions
+        text: Original text
+        boost_amount: Amount to boost score (default: 0.1)
+        
+    Returns:
+        Entities with adjusted scores
+    """
+    text_lower = text.lower()
+    
+    boosted = []
+    for entity in entities:
+        score = entity['score']
+        start = entity['start']
+        end = entity['end']
+        label = entity['label']
+        
+        # Get context window (±50 characters)
+        context_start = max(0, start - 50)
+        context_end = min(len(text), end + 50)
+        context = text_lower[context_start:context_end]
+        
+        # Context indicators for each label type
+        indicators = {
+            'STATE': ['state', 'territory'],
+            'DISTRICT': ['district', 'dt.', 'dist.'],
+            'VILLAGE': ['village', 'town', 'settlement'],
+            'OTHER_LOCATION': ['area', 'forest', 'police station', 'ps', 'region']
+        }
+        
+        # Check for context indicators
+        if label in indicators:
+            for indicator in indicators[label]:
+                if indicator in context:
+                    score = min(1.0, score + boost_amount)
+                    break
+        
+        entity_copy = entity.copy()
+        entity_copy['score'] = score
+        boosted.append(entity_copy)
+    
+    return boosted
+
+
+def prefer_multitoken_entities(entities: List[Dict], boost_amount: float = 0.05) -> List[Dict]:
+    """
+    Boost multi-token entities when scores are close (tie-breaker).
+    
+    Args:
+        entities: List of entity predictions
+        boost_amount: Amount to boost multi-token entities (default: 0.05)
+        
+    Returns:
+        Entities with adjusted scores
+    """
+    adjusted = []
+    for entity in entities:
+        text = entity['text']
+        score = entity['score']
+        
+        # Count tokens (simple split on spaces)
+        num_tokens = len(text.strip().split())
+        
+        # Boost if multi-token
+        if num_tokens > 1:
+            score = min(1.0, score + boost_amount)
+        
+        entity_copy = entity.copy()
+        entity_copy['score'] = score
+        adjusted.append(entity_copy)
+    
+    return adjusted
+
+
+def slot_fill_locations(entities: List[Dict]) -> Dict[str, Optional[str]]:
+    """
+    Convert entity predictions to slot-filled location structure.
+    
+    Applies slot-filling logic:
+    - STATE, DISTRICT, VILLAGE: take top-1 prediction by score
+    - OTHER_LOCATION: collect all remaining + explicit OTHER_LOCATION predictions
+    
+    Args:
+        entities: List of entity predictions with label, text, and score
+        
+    Returns:
+        Dict with slots: {"STATE": str, "DISTRICT": str, "VILLAGE": str, "OTHER_LOCATION": [str]}
+    """
+    # Group entities by label
+    by_label = defaultdict(list)
+    for entity in entities:
+        by_label[entity['label']].append(entity)
+    
+    # Initialize slots
+    slots = {
+        'STATE': None,
+        'DISTRICT': None,
+        'VILLAGE': None,
+        'OTHER_LOCATION': []
+    }
+    
+    # Fill single-value slots (take highest scoring)
+    for label in ['STATE', 'DISTRICT', 'VILLAGE']:
+        if by_label[label]:
+            # Sort by score descending
+            sorted_entities = sorted(by_label[label], key=lambda x: x['score'], reverse=True)
+            best = sorted_entities[0]
+            slots[label] = best['text']
+    
+    # Collect other locations
+    # 1. Explicit OTHER_LOCATION predictions
+    for entity in by_label['OTHER_LOCATION']:
+        if entity['text'] not in slots['OTHER_LOCATION']:
+            slots['OTHER_LOCATION'].append(entity['text'])
+    
+    # 2. STATE/DISTRICT/VILLAGE predictions that weren't chosen (lower scoring alternatives)
+    chosen_texts = {slots[k] for k in ['STATE', 'DISTRICT', 'VILLAGE'] if slots[k]}
+    
+    for label in ['STATE', 'DISTRICT', 'VILLAGE']:
+        for entity in by_label[label]:
+            # If this entity wasn't chosen and has decent score, add to other_locations
+            if entity['text'] not in chosen_texts and entity['score'] >= 0.4:
+                if entity['text'] not in slots['OTHER_LOCATION']:
+                    slots['OTHER_LOCATION'].append(entity['text'])
+    
+    return slots
+
+
+def slots_to_structured_string(slots: Dict[str, Optional[str]]) -> str:
+    """
+    Convert slot-filled dict to structured string format.
+    
+    Format: "state: X, district: Y, village: Z, other_locations: A, B"
+    
+    Args:
+        slots: Dict with STATE, DISTRICT, VILLAGE, OTHER_LOCATION keys
+        
+    Returns:
+        Structured location string
+    """
+    parts = []
+    
+    if slots.get('STATE'):
+        parts.append(f"state: {slots['STATE']}")
+    
+    if slots.get('DISTRICT'):
+        parts.append(f"district: {slots['DISTRICT']}")
+    
+    if slots.get('VILLAGE'):
+        parts.append(f"village: {slots['VILLAGE']}")
+    
+    if slots.get('OTHER_LOCATION') and len(slots['OTHER_LOCATION']) > 0:
+        other_locs = ', '.join(slots['OTHER_LOCATION'])
+        parts.append(f"other_locations: {other_locs}")
+    
+    return ', '.join(parts) if parts else ''
+
+
+def run_gliner_extraction(model, text: str, 
+                          apply_boosting: bool = True,
+                          apply_thresholds: bool = True) -> Tuple[str, Dict]:
+    """
+    Run complete GLiNER extraction pipeline on a single text.
+    
+    Args:
+        model: GLiNER model instance
+        text: Input text
+        apply_boosting: Whether to apply context boosting and multi-token preference
+        apply_thresholds: Whether to apply label-specific thresholds
+        
+    Returns:
+        Tuple of (structured_string, slots_dict)
+    """
+    # Get raw predictions
+    entities = predict_entities_gliner(model, text)
+    
+    # Apply boosting if requested
+    if apply_boosting:
+        entities = apply_context_boosting(entities, text)
+        entities = prefer_multitoken_entities(entities)
+    
+    # Apply label-specific thresholds if requested
+    if apply_thresholds:
+        entities = apply_label_specific_thresholds(entities)
+    
+    # Slot-fill
+    slots = slot_fill_locations(entities)
+    
+    # Convert to structured string
+    structured = slots_to_structured_string(slots)
+    
+    return structured, slots
+
+
+def batch_extract_locations(model, texts: List[str], 
+                            show_progress: bool = True) -> List[Dict]:
+    """
+    Run GLiNER extraction on a batch of texts.
+    
+    Args:
+        model: GLiNER model instance
+        texts: List of input texts
+        show_progress: Whether to show progress bar
+        
+    Returns:
+        List of dicts with structured_location and slots
+    """
+    results = []
+    
+    if show_progress:
+        try:
+            from tqdm import tqdm
+            texts = tqdm(texts, desc="GLiNER extraction")
+        except ImportError:
+            pass
+    
+    for text in texts:
+        structured, slots = run_gliner_extraction(model, text)
+        results.append({
+            'structured_location': structured,
+            'slots': slots,
+            'text': text
+        })
+    
+    return results
+

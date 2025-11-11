@@ -6,6 +6,10 @@ peft>=0.11.0
 evaluate>=0.4.0
 bitsandbytes>=0.43
 rapidfuzz>=3
+seqeval>=1.2.0
+
+# NER-specific libraries
+gliner>=0.2.0
 
 # API libraries for LLM inference
 openai>=1.0.0
