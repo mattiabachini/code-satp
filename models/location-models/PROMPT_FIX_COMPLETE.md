@@ -3,8 +3,7 @@
 This document details the comprehensive fixes and improvements made to `location_extraction_llms.ipynb`, including:
 1. **Prompt Fix**: Corrected death-count prompts being sent instead of location prompts
 2. **Architectural Improvements**: Centralized prompt creation in utilities
-3. **Data Loading Consistency**: Using pre-split data from count-models
-4. **Performance Optimizations**: Batch processing and quantization settings for A100
+3. **Performance Optimizations**: Batch processing and quantization settings for A100
 
 ---
 
@@ -273,51 +272,6 @@ texts = [make_location_prompt(summary) for summary in df['incident_summary']]
 ```
 
 This architecture matches other notebooks where data preparation utilities are centralized rather than defined inline.
-
----
-
-## Data Loading Consistency
-
-Updated the notebook to use pre-split data from `count-models/data` instead of creating splits from scratch:
-
-### Changes Made
-
-1. **Load pre-split data** (Cells 15-17):
-   - Load `val.csv` and `test.csv` from `models/count-models/data/`
-   - These files contain consistent temporal splits (80/10/10) used across all tasks
-   - Load `location_info_augmented.csv` for location annotations
-   - Merge location annotations with the pre-split data
-
-2. **Verify and select split** (Cell 19):
-   - Follows the same pattern as `death-count-extraction-llms.ipynb`
-   - Toggle between validation and test splits via `EVAL_SPLIT` variable
-   - Comprehensive data verification and example display
-
-### Benefits
-
-- **Consistency**: All notebooks (location, death-count, etc.) use the same temporal splits
-- **Reproducibility**: No need to recreate splits each time
-- **Simplicity**: Follows established patterns across the codebase
-- **Proper evaluation**: Test set is truly held-out across all experiments
-
-### Old Approach (Removed)
-```python
-# Created temporal splits from scratch each time
-data = pd.read_csv('location_info_augmented.csv')
-train_data = data.iloc[:train_end_idx]
-val_data = data.iloc[train_end_idx:val_end_idx]
-test_data = data.iloc[val_end_idx:]
-```
-
-### New Approach
-```python
-# Use pre-split data from count-models (consistent across notebooks)
-val_df = pd.read_csv('models/count-models/data/val.csv')
-test_df = pd.read_csv('models/count-models/data/test.csv')
-location_data = pd.read_csv('data/location_info_augmented.csv')
-val_df = val_df.merge(location_data, on='incident_number')
-test_df = test_df.merge(location_data, on='incident_number')
-```
 
 ---
 
