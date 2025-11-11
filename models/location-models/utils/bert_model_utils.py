@@ -37,7 +37,7 @@ from .metrics_utils import compute_metrics, parse_structured_location
 # Model configurations
 BERT_MODEL_CONFIGS = {
     'confliBERT': {
-        'model_name': 'cfli/bert-base-uncased-conflict',
+        'model_name': 'snowood1/ConfliBERT-scr-cased',
         'description': 'BERT model pretrained on conflict-related text',
     },
     'deberta-v3': {
