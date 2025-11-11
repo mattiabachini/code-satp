@@ -699,6 +699,7 @@ def run_location_gemini_batch(
     rate_limit_delay: float = 0.1,
     show_progress: bool = True,
     max_retries: int = 4,
+    max_concurrency: int = 8,
 ):
     """
     Run inference on location extraction prompts using Google Gemini API.
@@ -714,6 +715,7 @@ def run_location_gemini_batch(
         rate_limit_delay: Delay between requests (seconds)
         show_progress: Whether to show progress
         max_retries: Maximum retries per item
+        max_concurrency: Maximum number of concurrent API calls (default 8)
         
     Returns:
         list: List of model output strings
@@ -754,7 +756,7 @@ def run_location_gemini_batch(
             ) from exc
         raise
     
-    outs = []
+    outs = [""] * len(prompts)
     total = len(prompts)
     errors = 0
 
@@ -785,27 +787,27 @@ def run_location_gemini_batch(
         ]
     except Exception:
         pass
-    
-    for i, prompt in enumerate(prompts):
-        out = ""
-        last_error: Optional[str] = None
+
+    # Worker function for a single prompt with retries and rate-limiting
+    def _process_one(idx: int, prompt: str) -> tuple[int, str, Optional[str]]:
+        last_error_local: Optional[str] = None
+        out_local = ""
         for attempt in range(max_retries):
             try:
-                # Use prompt as-is (already formatted by caller)
                 response = model.generate_content(
                     prompt,
                     generation_config=gen_config,
                     safety_settings=safety_settings
                 )
                 if hasattr(response, 'text') and response.text:
-                    out = response.text.strip()
+                    out_local = response.text.strip()
                 elif hasattr(response, 'candidates') and response.candidates:
                     candidate = response.candidates[0]
                     if hasattr(candidate, 'content') and candidate.content.parts:
-                        out = candidate.content.parts[0].text.strip()
+                        out_local = candidate.content.parts[0].text.strip()
                 break
             except Exception as exc:
-                last_error = str(exc)
+                last_error_local = str(exc)
                 base = 0.5
                 sleep_s = base * (2 ** attempt)
                 try:
@@ -814,18 +816,45 @@ def run_location_gemini_batch(
                 except Exception:
                     pass
                 time.sleep(sleep_s)
-        
-        if not out and last_error:
-            errors += 1
-        outs.append(out.strip())
-        
-        if progress_bar is not None:
-            progress_bar.update(1)
-        elif use_simple_progress:
-            print(f"  Processing {i + 1}/{total}...", flush=True)
-        
+        # Gentle pacing to avoid bursting the API
         if rate_limit_delay > 0:
             time.sleep(rate_limit_delay)
+        return idx, out_local.strip(), last_error_local if not out_local else None
+
+    # Execute with bounded concurrency while preserving output order
+    if total > 0:
+        try:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+        except Exception:
+            # Fallback to sequential if futures not available
+            for i, p in enumerate(prompts):
+                idx, out, err = _process_one(i, p)
+                outs[idx] = out
+                if err:
+                    errors += 1
+                if progress_bar is not None:
+                    progress_bar.update(1)
+                elif use_simple_progress:
+                    print(f"  Processing {i + 1}/{total}...", flush=True)
+        else:
+            with ThreadPoolExecutor(max_workers=max(1, int(max_concurrency))) as executor:
+                futures = [executor.submit(_process_one, i, p) for i, p in enumerate(prompts)]
+                for fut in as_completed(futures):
+                    try:
+                        idx, out, err = fut.result()
+                        outs[idx] = out
+                        if err:
+                            errors += 1
+                    except Exception as exc:
+                        # Count as error and leave out as empty
+                        errors += 1
+                    finally:
+                        if progress_bar is not None:
+                            progress_bar.update(1)
+                        elif use_simple_progress:
+                            # Try to approximate completed count
+                            done = sum(1 for f in futures if f.done())
+                            print(f"  Processing {done}/{total}...", flush=True)
     
     if progress_bar is not None:
         progress_bar.close()
