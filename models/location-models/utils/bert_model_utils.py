@@ -166,7 +166,7 @@ def train_span_ner_model(
     # Build kwargs compatibly across transformers versions
     candidate_kwargs: Dict[str, Any] = {
         "output_dir": output_dir,
-        "evaluation_strategy": "epoch",  # available on most 4.x versions
+        "evaluation_strategy": "epoch",
         "save_strategy": "epoch",
         "learning_rate": learning_rate,
         "per_device_train_batch_size": batch_size,
