@@ -198,6 +198,17 @@ def load_causal(model_id: str, token: Optional[str] = None):
             use_fast=True,
             token=hf_token
         )
+        # For decoder-only models (e.g., Llama, Mistral), left padding is required for batched generation
+        # and avoids transformer warnings about right-padding.
+        try:
+            tok.padding_side = "left"
+        except Exception:
+            pass
+        # Ensure a pad token exists; fall back to eos when undefined
+        if getattr(tok, "pad_token", None) is None and getattr(tok, "eos_token", None) is not None:
+            tok.pad_token = tok.eos_token
+        if getattr(tok, "pad_token_id", None) is None and getattr(tok, "eos_token_id", None) is not None:
+            tok.pad_token_id = tok.eos_token_id
         model_kwargs = {
             "device_map": "auto",
             "token": hf_token,
