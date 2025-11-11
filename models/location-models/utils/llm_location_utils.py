@@ -22,6 +22,7 @@ LOCATION_EXTRACTION_INSTRUCTION = (
     "Extract the location hierarchy from this incident. "
     "Return exactly in format: state: <name>, district: <name>, village: <name>, other_locations: <name>. "
     "Use exact format with labels. Omit any missing administrative levels. "
+    "Do not repeat the incident text; output only the structured fields. "
     "If no locations are mentioned, return an empty string."
 )
 
@@ -773,12 +774,15 @@ def run_location_gemini_batch(
     gen_config: Dict[str, Any] = {
         "max_output_tokens": max_output_tokens,
         "temperature": 0.0,
+        # Hint the model to avoid narrative formatting
+        "response_mime_type": "text/plain",
     }
 
-    # Configure permissive safety for violence
+    # Configure permissive safety; prefer typed enums if available, else fall back to SDK-introspected strings
     safety_settings = None
     try:
-        from google.generativeai.types import HarmCategory, HarmBlockThreshold
+        from google.generativeai.types import HarmCategory, HarmBlockThreshold  # type: ignore
+        # If typed enums exist, at least disable blocking on violence
         safety_settings = [
             {
                 "category": HarmCategory.HARM_CATEGORY_VIOLENCE,
@@ -786,7 +790,18 @@ def run_location_gemini_batch(
             }
         ]
     except Exception:
-        pass
+        safety_settings = None
+    if safety_settings is None:
+        # Fallback: attempt to set BLOCK_NONE across all categories supported by this SDK version
+        try:
+            import google.generativeai.types.safety_types as _st  # type: ignore
+            _cats = list(getattr(_st, "_HARM_CATEGORIES", {}).keys())
+            _ths = getattr(_st, "_HARM_BLOCK_THRESHOLDS", {})
+            _t = "block_none" if "block_none" in _ths else (list(_ths.keys())[0] if _ths else None)
+            if _cats and _t:
+                safety_settings = [{"category": c, "threshold": _t} for c in _cats]
+        except Exception:
+            safety_settings = None
 
     # Worker function for a single prompt with retries and rate-limiting
     def _process_one(idx: int, prompt: str) -> tuple[int, str, Optional[str]]:
