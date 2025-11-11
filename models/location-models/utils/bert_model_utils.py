@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Any, Tuple
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+import inspect
 from transformers import (
     AutoTokenizer,
     AutoModelForTokenClassification,
@@ -162,22 +163,27 @@ def train_span_ner_model(
     data_collator = DataCollatorForTokenClassification(tokenizer)
     
     # Training arguments
-    training_args = TrainingArguments(
-        output_dir=output_dir,
-        evaluation_strategy="epoch",
-        save_strategy="epoch",
-        learning_rate=learning_rate,
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
-        num_train_epochs=num_epochs,
-        weight_decay=0.01,
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
-        save_total_limit=2,
-        logging_dir=f"{output_dir}/logs",
-        logging_steps=50,
-        report_to=["tensorboard"],
-    )
+    # Build kwargs compatibly across transformers versions
+    candidate_kwargs: Dict[str, Any] = {
+        "output_dir": output_dir,
+        "evaluation_strategy": "epoch",  # available on most 4.x versions
+        "save_strategy": "epoch",
+        "learning_rate": learning_rate,
+        "per_device_train_batch_size": batch_size,
+        "per_device_eval_batch_size": batch_size,
+        "num_train_epochs": num_epochs,
+        "weight_decay": 0.01,
+        "load_best_model_at_end": True,
+        "metric_for_best_model": "eval_loss",
+        "save_total_limit": 2,
+        "logging_dir": f"{output_dir}/logs",
+        "logging_steps": 50,
+        "report_to": ["tensorboard"],
+    }
+    # Filter unsupported args for older/newer transformers versions
+    accepted_params = set(inspect.signature(TrainingArguments.__init__).parameters.keys())
+    filtered_kwargs = {k: v for k, v in candidate_kwargs.items() if k in accepted_params}
+    training_args = TrainingArguments(**filtered_kwargs)
     
     # Trainer
     trainer = Trainer(
