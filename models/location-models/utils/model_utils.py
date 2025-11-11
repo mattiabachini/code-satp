@@ -359,7 +359,7 @@ def run_flan_t5_xl_lora_location_model(
     """
     # Import utilities here to avoid circular imports
     from .training_utils import cleanup_model
-    from .metrics_utils import compute_metrics, print_metrics
+    from .metrics_utils import compute_metrics, print_metrics, clean_location_text
     from .file_io import save_dataframe_csv, get_task_results_dir
     
     # Import PEFT/LoRA dependencies
