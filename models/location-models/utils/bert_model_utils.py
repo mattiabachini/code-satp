@@ -657,29 +657,7 @@ def evaluate_ner_model(
     )
     
     # metrics has structure: {'overall': {...}, 'levels': {...}}
-    # This matches the seq2seq format and will be saved to JSON as-is
-    
-    # Add top-level convenience keys for backward compatibility with print statements
-    # Extract from nested structure
-    overall = metrics.get('overall', {})
-    levels = metrics.get('levels', {})
-    
-    # Add flat keys at top level for easy access in print statements
-    metrics['exact_match'] = overall.get('exact_match', 0)
-    metrics['fuzzy_match'] = overall.get('fuzzy_match', 0)
-    metrics['micro_precision'] = overall.get('micro_exact_precision', 0)
-    metrics['micro_recall'] = overall.get('micro_exact_recall', 0)
-    metrics['micro_f1'] = overall.get('micro_exact_f1', 0)
-    
-    # Add per_level dict for backward compatibility (maps to 'levels' structure)
-    metrics['per_level'] = {}
-    for level in ['state', 'district', 'village', 'other_locations']:
-        if level in levels:
-            metrics['per_level'][level] = {
-                'precision': levels[level].get('exact_precision', 0),
-                'recall': levels[level].get('exact_recall', 0),
-                'f1': levels[level].get('exact_f1', 0),
-            }
+    # This matches the seq2seq format and GLiNER format exactly
     
     results = {
         'metrics': metrics,

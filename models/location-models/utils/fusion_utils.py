@@ -119,13 +119,13 @@ def apply_state_fusion(
     # Metrics (percent)
     gts = all_results[model_key]["ground_truth"]
     fused_metrics = compute_location_metrics_from_strings(fused_preds, gts, fuzzy_threshold=85)
-    print(
-        f"\n{model_key} (fused) — Exact: {fused_metrics['overall']['exact_match']:.2f}%, "
-        f"Fuzzy: {fused_metrics['overall']['fuzzy_match']:.2f}%, "
-        f"State exact F1: {fused_metrics['levels']['state']['exact_f1']:.2f}%"
-    )
+    
+    # Print comprehensive metrics report
+    from .metrics_utils import print_metrics
+    print(f"\n{model_key} (AFTER STATE FUSION):")
+    print_metrics(fused_metrics, f"{model_key} (fused)")
 
-    # Save fused predictions and metrics
+    # Save fused predictions CSV
     fused_df = pd.DataFrame({
         "incident_number": [ex["metadata"]["incident_number"] for ex in test_data],
         "incident_summary": [ex["text"] for ex in test_data],
@@ -137,55 +137,15 @@ def apply_state_fusion(
     else:
         fused_df.to_csv(output_dir / f"{model_key}_predictions_fused.csv", index=False)
 
-    fm = fused_metrics
-    fused_metrics_row = pd.DataFrame([{
-        "model": model_key,
-        "exact_match": fm["overall"]["exact_match"],
-        "fuzzy_match": fm["overall"]["fuzzy_match"],
-        "micro_precision": fm["overall"]["micro_exact_precision"],
-        "micro_recall": fm["overall"]["micro_exact_recall"],
-        "micro_f1": fm["overall"]["micro_exact_f1"],
-        "state_f1": fm["levels"]["state"]["exact_f1"],
-        "district_f1": fm["levels"]["district"]["exact_f1"],
-        "village_f1": fm["levels"]["village"]["exact_f1"],
-        "other_locations_f1": fm["levels"]["other_locations"]["exact_f1"],
-    }])
-    if save_dataframe_csv_func and task_name:
-        save_dataframe_csv_func(fused_metrics_row, f"{model_key}_metrics_fused.csv", task_name)
-    else:
-        fused_metrics_row.to_csv(output_dir / f"{model_key}_metrics_fused.csv", index=False)
-
-    # Expose fused results back to all_results
+    # Save fused metrics JSON (comprehensive format)
+    metrics_path = results_dir / f"{model_key}_metrics_fused.json"
+    with open(metrics_path, 'w') as f:
+        json.dump(fused_metrics, f, indent=2)
+    print(f"✅ {model_key} (fused) comprehensive metrics saved to JSON: {metrics_path}")
+    
+    # Expose fused results back to all_results (use comprehensive format)
     all_results[model_key]["predictions_fused"] = fused_preds
-    all_results[model_key]["metrics_fused"] = {
-        "exact_match": fm["overall"]["exact_match"],
-        "fuzzy_match": fm["overall"]["fuzzy_match"],
-        "micro_f1": fm["overall"]["micro_exact_f1"],
-        "micro_precision": fm["overall"]["micro_exact_precision"],
-        "micro_recall": fm["overall"]["micro_exact_recall"],
-        "per_level": {
-            "state": {
-                "f1": fm["levels"]["state"]["exact_f1"],
-                "precision": fm["levels"]["state"]["exact_precision"],
-                "recall": fm["levels"]["state"]["exact_recall"],
-            },
-            "district": {
-                "f1": fm["levels"]["district"]["exact_f1"],
-                "precision": fm["levels"]["district"]["exact_precision"],
-                "recall": fm["levels"]["district"]["exact_recall"],
-            },
-            "village": {
-                "f1": fm["levels"]["village"]["exact_f1"],
-                "precision": fm["levels"]["village"]["exact_precision"],
-                "recall": fm["levels"]["village"]["exact_recall"],
-            },
-            "other_locations": {
-                "f1": fm["levels"]["other_locations"]["exact_f1"],
-                "precision": fm["levels"]["other_locations"]["exact_precision"],
-                "recall": fm["levels"]["other_locations"]["exact_recall"],
-            },
-        },
-    }
+    all_results[model_key]["metrics_fused"] = fused_metrics  # Use full comprehensive structure
 
     return fused_metrics
 

@@ -158,10 +158,50 @@ Each model now produces:
 - ✅ JSON format matches seq2seq exactly, enabling cross-model comparison
 - ✅ New JSON files provide richer data for deeper analysis
 
+## Console Output Harmonization
+
+**Latest Update:** All models now use the same beautiful metrics reporting format!
+
+### Changes Made:
+1. **BERT models** now use `print_metrics()` instead of custom print statements
+2. **Fusion results** also use `print_metrics()` with comprehensive formatted output
+3. **JSON structure** is now identical across all models (GLiNER, BERT, fused BERT)
+4. Removed flattened backward-compatibility keys from BERT metrics
+
+### What You'll See:
+All models (GLiNER and all BERT models) will display:
+```
+================================================================================
+{MODEL NAME} EVALUATION RESULTS
+================================================================================
+Total Examples: 992
+
+FULL RECORD ACCURACY                     Exact Match     Fuzzy Match    
+----------------------------------------------------------------------
+All fields correct (incl. other_locations)   X.XX%          X.XX%
+Core geography correct (state+district+village)   X.XX%          X.XX%
+
+MICRO-AVERAGED METRICS                   Exact Match     Fuzzy Match    
+----------------------------------------------------------------------
+Precision                                 XX.XX%         XX.XX%
+Recall                                    XX.XX%         XX.XX%
+F1 Score                                  XX.XX%         XX.XX%
+
+FIELD-LEVEL METRICS  Match Type   Precision    Recall       F1 Score     Support   
+------------------------------------------------------------------------------
+[Detailed per-field metrics...]
+```
+
+### JSON Format:
+All metrics JSON files now have the identical structure:
+- `overall`: exact_match, exact_core_match, fuzzy_match, fuzzy_core_match, micro metrics
+- `levels`: per-level exact and fuzzy precision/recall/F1/support
+
 ## Next Steps
 
 1. Run the notebook to verify all changes work correctly
-2. Compare JSON outputs across models to identify best performers
-3. Use the rich metrics for model selection and error analysis
-4. Consider adding visualization notebooks that leverage the new comprehensive metrics
+2. Enjoy the beautiful, consistent metrics output across all models! 🎉
+3. Compare JSON outputs across models to identify best performers
+4. Use the rich metrics for model selection and error analysis
+5. Consider adding visualization notebooks that leverage the new comprehensive metrics
 
