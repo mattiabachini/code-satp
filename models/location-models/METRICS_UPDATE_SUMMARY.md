@@ -121,6 +121,18 @@ Flattened version with all metrics in columns for easy comparison across models.
 4. ✅ **Maintainability**: Single source of truth for metrics computation
 5. ✅ **Flexibility**: Both detailed JSON and quick-comparison CSV outputs
 
+## Important Notes
+
+### JSON Saving Fix
+After initial implementation, we discovered that JSON files weren't being saved correctly due to import path issues. This has been fixed by:
+
+1. Adding an optional `results_dir` parameter to both `save_gliner_predictions_and_metrics()` and `save_bert_predictions_and_metrics()`
+2. Using frame inspection to find `get_task_results_dir` from the caller's context when `results_dir` is not provided
+3. Updating all notebook cells to explicitly pass `results_dir=results_dir` to the save functions
+4. Adding fallback logic for local/Colab path detection
+
+Now both GLiNER and BERT models will correctly save comprehensive JSON metrics files!
+
 ## Testing
 
 Run the notebook cells and verify:
@@ -128,6 +140,7 @@ Run the notebook cells and verify:
 2. BERT models save both `{model}_metrics.json` and `{model}_metrics.csv`
 3. JSON structure matches the example above
 4. All models report the same set of metrics
+5. Console output shows "✅ {model} comprehensive metrics saved to JSON: {path}"
 
 ## Backward Compatibility
 

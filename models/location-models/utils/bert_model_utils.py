@@ -87,7 +87,9 @@ class MultiTaskLocationModel(nn.Module):
         state_labels: Optional[torch.Tensor] = None,     # int64 class ids for state
         **kwargs
     ) -> Dict[str, torch.Tensor]:
-        outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask, **{k: v for k, v in kwargs.items() if k not in {"labels", "state_labels"}})
+        # Filter out training-specific kwargs that the backbone doesn't expect
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k not in {"labels", "state_labels", "num_items_in_batch"}}
+        outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask, **filtered_kwargs)
         sequence_output = outputs.last_hidden_state  # (batch, seq_len, hidden)
         pooled_output = sequence_output[:, 0, :]     # use first token ([CLS] or <s>) as pooled representation
         pooled_output = self.dropout(pooled_output)
@@ -753,6 +755,7 @@ def save_bert_predictions_and_metrics(
     test_data: List[Dict],
     task_name: str,
     save_dataframe_csv_func,
+    results_dir = None,
 ) -> None:
     """
     Save BERT model predictions and metrics to CSV and JSON files.
@@ -769,6 +772,7 @@ def save_bert_predictions_and_metrics(
         test_data: Test dataset with metadata (incident_number, text, etc.)
         task_name: Task name for organizing results
         save_dataframe_csv_func: Function to save dataframes (from file_io)
+        results_dir: Optional Path to results directory (will be inferred if not provided)
     """
     import json
     from pathlib import Path
@@ -782,20 +786,37 @@ def save_bert_predictions_and_metrics(
     })
     save_dataframe_csv_func(predictions_df, f"{model_key}_predictions.csv", task_name)
     
-    # Save comprehensive metrics to JSON (matching seq2seq format)
-    # Import get_task_results_dir to get the correct results directory
-    try:
-        from models.classification_models.utils.file_io import get_task_results_dir
-        results_dir = get_task_results_dir(task_name)
-    except:
-        # Fallback for local mode
-        results_dir = Path(f"./results/{task_name}")
+    # Get results directory if not provided
+    if results_dir is None:
+        try:
+            # Try to get get_task_results_dir from caller's frame
+            import inspect
+            frame = inspect.currentframe()
+            caller_globals = frame.f_back.f_globals if frame and frame.f_back else {}
+            
+            if 'get_task_results_dir' in caller_globals:
+                get_task_results_dir = caller_globals['get_task_results_dir']
+                results_dir = get_task_results_dir(task_name)
+            else:
+                # Fallback: construct path based on typical Colab structure
+                results_dir = Path("/content/drive/MyDrive/colab/satp-results") / task_name
+                if not results_dir.exists():
+                    # Try local path if Colab path doesn't exist
+                    results_dir = Path(f"./results/{task_name}")
+                results_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            # Final fallback for local mode
+            results_dir = Path(f"./results/{task_name}")
+            results_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        results_dir = Path(results_dir)
         results_dir.mkdir(parents=True, exist_ok=True)
     
+    # Save comprehensive metrics to JSON (matching seq2seq format)
     metrics_path = results_dir / f"{model_key}_metrics.json"
     with open(metrics_path, 'w') as f:
         json.dump(results['test_metrics'], f, indent=2)
-    print(f"✅ {model_key} comprehensive metrics saved to JSON")
+    print(f"✅ {model_key} comprehensive metrics saved to JSON: {metrics_path}")
     
     # Also save flattened CSV for easy comparison
     from .metrics_utils import flatten_metrics_for_csv
