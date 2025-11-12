@@ -450,8 +450,8 @@ def predict_ner_batch(
             pred_ids = pred.cpu().numpy().tolist()
             tokens = tokenizer.convert_ids_to_tokens(input_ids[j])
             
-            # Get id to label mapping
-            id_to_label = model.config.id2label
+            # Get id to label mapping (from custom model's id2label attribute)
+            id_to_label = model.id2label
             
             # Convert predictions to entities
             entities = predictions_to_entities(tokens, pred_ids, id_to_label)
