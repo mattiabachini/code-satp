@@ -882,3 +882,202 @@ def run_location_gemini_batch(
     
     return outs
 
+
+def run_location_gemini_json_batch(
+    texts: List[str],
+    api_key: Optional[str] = None,
+    model_name: str = "models/gemini-2.5-flash",
+    max_output_tokens: int = 512,
+    rate_limit_delay: float = 0.1,
+    show_progress: bool = True,
+    max_retries: int = 4,
+    max_concurrency: int = 8,
+    max_chars: int = 350,
+):
+    """
+    Run inference for location extraction using Gemini with JSON-only responses.
+    
+    This variant:
+      - Builds a strict JSON prompt per text
+      - Truncates inputs to reduce safety blocks
+      - Requests application/json MIME type
+      - Converts JSON to the standard structured string
+        "state: X, district: Y, village: Z, other_locations: W"
+    
+    Args:
+        texts: List of incident summaries (raw text)
+        api_key: Gemini API key
+        model_name: Gemini model (prefer full resource name: "models/gemini-2.5-flash")
+        max_output_tokens: Max tokens for JSON output (default 512)
+        rate_limit_delay: Delay between requests (seconds)
+        show_progress: Show progress bar if tqdm available
+        max_retries: Retries per item with backoff
+        max_concurrency: Max parallel requests
+        max_chars: Truncate input to this many characters
+    
+    Returns:
+        list[str]: Structured location strings for each input text
+    """
+    # Deps imported lazily to avoid hard requirements outside this path
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        raise ImportError(
+            "google-generativeai package not installed. Install with: pip install google-generativeai"
+        )
+    import json as _json
+    import math as _math
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import random as _random
+    
+    # Resolve API key
+    if api_key is None:
+        try:
+            from google.colab import userdata  # type: ignore
+            api_key = userdata.get('gemini_api_key')
+        except ImportError:
+            import os as _os
+            api_key = _os.environ.get('GEMINI_API_KEY')
+    if not api_key:
+        raise ValueError(
+            "Gemini API key not found. "
+            "Set GEMINI_API_KEY environment variable or add 'gemini_api_key' to Colab secrets."
+        )
+    
+    # Configure SDK and model
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name)
+    
+    # Build prompts
+    def _truncate(s: str, n: int) -> str:
+        return s if len(s) <= n else s[:n] + "..."
+    
+    def _make_json_prompt(text: str) -> str:
+        return (
+            "Extract the location as JSON with exactly these string keys:\n"
+            '  {\"state\": \"\", \"district\": \"\", \"village\": \"\", \"other_locations\": \"\"}\n'
+            "- Use empty string if unknown. Output ONLY one-line JSON, nothing else.\n\n"
+            f"Incident: {text}\n\nJSON:"
+        )
+    
+    prompts = [_make_json_prompt(_truncate(s or "", max_chars)) for s in texts]
+    
+    # Generation config
+    gen_config: Dict[str, Any] = {
+        "max_output_tokens": max_output_tokens,
+        "temperature": 0.0,
+        "response_mime_type": "application/json",
+    }
+    
+    # Helper to extract first text part
+    def _first_text_part(resp) -> str:
+        try:
+            if getattr(resp, "candidates", None):
+                c0 = resp.candidates[0]
+                if getattr(c0, "content", None) and getattr(c0.content, "parts", None):
+                    for part in c0.content.parts:
+                        if hasattr(part, "text") and part.text:
+                            return part.text.strip()
+        except Exception:
+            pass
+        return ""
+    
+    # Convert JSON string to standardized structured string
+    def _json_to_structured(s: str) -> str:
+        if not s:
+            return ""
+        try:
+            d = _json.loads(s)
+            norm = {
+                "state": (d.get("state") or "").strip() or None,
+                "district": (d.get("district") or "").strip() or None,
+                "village": (d.get("village") or "").strip() or None,
+                "other_locations": (d.get("other_locations") or "").strip() or None,
+            }
+            return dict_to_structured_string(norm)
+        except Exception:
+            return ""
+    
+    outs_structured = [""] * len(prompts)
+    total = len(prompts)
+    errors = 0
+    
+    progress_bar = None
+    use_simple_progress = False
+    if show_progress and total > 0:
+        if tqdm is not None:
+            progress_bar = tqdm(total=total, desc="Generating (Gemini JSON)", leave=False)
+        else:
+            use_simple_progress = True
+            print(f"  Processing 0/{total}...", flush=True)
+    
+    # Worker with retries and pacing
+    def _process_one(idx: int, prompt: str) -> tuple[int, str, Optional[str]]:
+        last_error_local: Optional[str] = None
+        out_local = ""
+        for attempt in range(max_retries):
+            try:
+                resp = model.generate_content(
+                    prompt,
+                    generation_config=gen_config,
+                    safety_settings=None
+                )
+                txt = _first_text_part(resp)
+                out_local = _json_to_structured(txt)
+                break
+            except Exception as exc:
+                last_error_local = str(exc)
+                base = 0.5
+                sleep_s = base * (2 ** attempt)
+                try:
+                    sleep_s += _random.random() * 0.2
+                except Exception:
+                    pass
+                time.sleep(sleep_s)
+        if rate_limit_delay > 0:
+            time.sleep(rate_limit_delay)
+        return idx, out_local.strip(), last_error_local if not out_local else None
+    
+    # Execute with concurrency, preserving order
+    if total > 0:
+        try:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+        except Exception:
+            # Fallback to sequential
+            for i, p in enumerate(prompts):
+                idx, out, err = _process_one(i, p)
+                outs_structured[idx] = out
+                if err:
+                    errors += 1
+                if progress_bar is not None:
+                    progress_bar.update(1)
+                elif use_simple_progress:
+                    print(f"  Processing {i + 1}/{total}...", flush=True)
+        else:
+            with ThreadPoolExecutor(max_workers=max(1, int(max_concurrency))) as executor:
+                futures = [executor.submit(_process_one, i, p) for i, p in enumerate(prompts)]
+                for fut in as_completed(futures):
+                    try:
+                        idx, out, err = fut.result()
+                        outs_structured[idx] = out
+                        if err:
+                            errors += 1
+                    except Exception:
+                        errors += 1
+                    finally:
+                        if progress_bar is not None:
+                            progress_bar.update(1)
+                        elif use_simple_progress:
+                            done = sum(1 for f in futures if f.done())
+                            print(f"  Processing {done}/{total}...", flush=True)
+    
+    if progress_bar is not None:
+        progress_bar.close()
+    
+    if show_progress:
+        print(f"  Completed {total}/{total} (errors: {errors})      ")
+    
+    if errors > 0:
+        print(f"⚠️  Warning: {errors} errors occurred during API calls")
+    
+    return outs_structured
