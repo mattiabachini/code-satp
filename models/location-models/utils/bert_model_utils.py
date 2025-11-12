@@ -21,6 +21,7 @@ from transformers import (
     TrainingArguments,
     Trainer,
     DataCollatorForTokenClassification,
+    EarlyStoppingCallback,
 )
 from datasets import Dataset
 import pandas as pd
@@ -358,7 +359,7 @@ def train_span_ner_model(
     filtered_kwargs = {k: v for k, v in candidate_kwargs.items() if k in accepted_params}
     training_args = TrainingArguments(**filtered_kwargs)
     
-    # Trainer
+    # Trainer with early stopping
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -366,6 +367,7 @@ def train_span_ner_model(
         eval_dataset=val_dataset,
         tokenizer=tokenizer,
         data_collator=data_collator,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=early_stopping_patience)],
     )
     
     # Train
