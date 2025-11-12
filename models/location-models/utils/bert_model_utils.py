@@ -282,7 +282,34 @@ def predict_ner_batch(
             # Apply NMS if requested
             if apply_nms and entities:
                 entities = non_maximum_suppression(entities, iou_threshold=nms_threshold)
-            
+            # Post-process entity text using character offsets to avoid subword artifacts
+            if entities:
+                # Offsets are on CPU; ensure list of tuples
+                example_offsets = offsets[j].tolist()
+                original_text = batch_texts[j]
+                for ent in entities:
+                    start_idx = ent.get('start_token', 0)
+                    end_idx = max(ent.get('end_token', start_idx + 1) - 1, 0)
+                    
+                    # Skip special tokens (offset (0, 0))
+                    while start_idx < len(example_offsets) and tuple(example_offsets[start_idx]) == (0, 0):
+                        start_idx += 1
+                    while end_idx >= 0 and tuple(example_offsets[end_idx]) == (0, 0):
+                        end_idx -= 1
+                    
+                    if 0 <= start_idx < len(example_offsets) and 0 <= end_idx < len(example_offsets) and start_idx <= end_idx:
+                        char_start = int(example_offsets[start_idx][0])
+                        char_end = int(example_offsets[end_idx][1])
+                        if 0 <= char_start < len(original_text) and 0 < char_end <= len(original_text) and char_end > char_start:
+                            ent['text'] = original_text[char_start:char_end].strip()
+                        else:
+                            # Fallback to decoding tokens if offsets look odd
+                            try:
+                                token_span_ids = input_ids[j][ent['start_token']:ent['end_token']]
+                                ent['text'] = tokenizer.decode(token_span_ids, skip_special_tokens=True).strip()
+                            except Exception:
+                                # Keep existing token-joined text
+                                pass
             all_entities.append(entities)
     
     return all_entities
