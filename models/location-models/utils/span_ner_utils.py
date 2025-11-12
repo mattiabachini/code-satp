@@ -227,9 +227,11 @@ def predictions_to_entities(tokens: List[str], predictions: List[int],
     entities = []
     current_entity = None
     
+    special_tokens = {'[CLS]', '[SEP]', '<s>', '</s>', '<pad>', '[PAD]', '[UNK]', '[BOS]', '[EOS]'}
+    
     for idx, (token, pred_id) in enumerate(zip(tokens, predictions)):
-        # Skip special tokens
-        if token in ['[CLS]', '[SEP]', '<s>', '</s>', '<pad>']:
+        # Skip special tokens (close any open entity)
+        if token in special_tokens:
             if current_entity:
                 entities.append(current_entity)
                 current_entity = None

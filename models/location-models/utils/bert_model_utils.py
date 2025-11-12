@@ -267,6 +267,8 @@ def predict_ner_batch(
         with torch.no_grad():
             outputs = model(input_ids=input_ids, attention_mask=attention_mask)
             predictions = torch.argmax(outputs.logits, dim=-1)
+            # Force 'O' on padding positions to avoid entities over [PAD]
+            predictions = predictions.masked_fill(attention_mask == 0, 0)
         
         # Convert to entities
         for j, (pred, text) in enumerate(zip(predictions, batch_texts)):

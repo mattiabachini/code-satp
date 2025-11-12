@@ -349,12 +349,20 @@ def create_ner_dataset(df: pd.DataFrame, text_col: str = 'incident_summary') -> 
         
         entities = align_location_to_spans(row, text_col)
         
+        # Build clean metadata with ground-truth fields to support evaluation later
+        def _clean_val(v):
+            return '' if pd.isna(v) or not str(v).strip() else str(v).strip()
+        
         ner_data.append({
             'text': text,
             'entities': entities,
             'metadata': {
                 'incident_number': str(row.get('incident_number', '')),
-                'date': str(row.get('date', ''))
+                'date': str(row.get('date', '')),
+                'state': _clean_val(row.get('state', '')),
+                'district': _clean_val(row.get('district', '')),
+                'village_name': _clean_val(row.get('village_name', '')),
+                'other_locations': _clean_val(row.get('other_locations', '')),
             }
         })
     
