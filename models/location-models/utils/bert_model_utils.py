@@ -745,14 +745,7 @@ def run_span_ner_model(
         max_length=max_length,
     )
     
-    # Print metrics
-    print("\nTest Metrics:")
-    print(f"Exact Match: {test_results['metrics']['exact_match']:.4f}")
-    print(f"Fuzzy Match: {test_results['metrics']['fuzzy_match']:.4f}")
-    print(f"Micro F1: {test_results['metrics']['micro_f1']:.4f}")
-    print("\nPer-Level F1:")
-    for level, metrics in test_results['metrics']['per_level'].items():
-        print(f"  {level}: {metrics['f1']:.4f}")
+    # Note: Metrics will be printed by the notebook using print_metrics()
     
     return {
         'model': model,
