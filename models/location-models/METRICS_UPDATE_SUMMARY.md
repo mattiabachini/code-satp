@@ -137,16 +137,25 @@ Now both GLiNER and BERT models will correctly save comprehensive JSON metrics f
 
 Run the notebook cells and verify:
 1. GLiNER evaluation produces comprehensive console output
-2. BERT models save both `{model}_metrics.json` and `{model}_metrics.csv`
-3. JSON structure matches the example above
-4. All models report the same set of metrics
-5. Console output shows "✅ {model} comprehensive metrics saved to JSON: {path}"
+2. All models save `{model}_metrics.json` (no CSV metrics file)
+3. All models save `{model}_predictions.csv` (predictions with incident info)
+4. JSON structure matches the example above
+5. All models report the same set of metrics
+6. Console output shows "✅ {model} comprehensive metrics saved to JSON: {path}"
+
+## File Outputs
+
+Each model now produces:
+- **`{model}_metrics.json`** - Full comprehensive metrics (matches seq2seq format) ✅
+- **`{model}_predictions.csv`** - Predictions with incident numbers and text ✅
+
+**Note:** Metrics CSV output has been removed to avoid redundancy. All metrics are now exclusively in JSON format for consistency with seq2seq models.
 
 ## Backward Compatibility
 
-- ✅ CSV files still have the same essential metrics (exact_match, fuzzy_match, per-level F1)
-- ✅ CSV now includes additional columns (exact_core_match, fuzzy_core_match, all P/R/F1 metrics)
-- ✅ All existing visualization and analysis code will continue to work
+- ⚠️ **Metrics CSV removed**: If you have code that reads `{model}_metrics.csv`, update it to read `{model}_metrics.json` instead
+- ✅ **Predictions CSV preserved**: Predictions are still saved with incident info
+- ✅ JSON format matches seq2seq exactly, enabling cross-model comparison
 - ✅ New JSON files provide richer data for deeper analysis
 
 ## Next Steps

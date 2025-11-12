@@ -818,12 +818,5 @@ def save_bert_predictions_and_metrics(
         json.dump(results['test_metrics'], f, indent=2)
     print(f"✅ {model_key} comprehensive metrics saved to JSON: {metrics_path}")
     
-    # Also save flattened CSV for easy comparison
-    from .metrics_utils import flatten_metrics_for_csv
-    flat_metrics = flatten_metrics_for_csv(results['test_metrics'])
-    flat_metrics['model'] = model_key
-    metrics_df = pd.DataFrame([flat_metrics])
-    save_dataframe_csv_func(metrics_df, f"{model_key}_metrics.csv", task_name)
-    
-    print(f"✅ {model_key} predictions and metrics saved")
+    print(f"✅ {model_key} predictions saved")
 
