@@ -165,6 +165,79 @@ def prefer_multitoken_entities(entities: List[Dict], boost_amount: float = 0.05)
     return adjusted
 
 
+def normalize_location_text(text: str) -> str:
+    """
+    Normalize location text by removing common geographic descriptors.
+    
+    Strips common suffixes and prefixes like "District", "village", "State", etc.
+    to match the ground truth format which uses simplified location names.
+    
+    Args:
+        text: Raw location text extracted by GLiNER
+        
+    Returns:
+        Normalized location name
+    """
+    if not text:
+        return text
+    
+    # Common geographic descriptors to remove (case-insensitive)
+    # Ordered from most specific to least specific
+    descriptors = [
+        # Full words with spaces - multi-word phrases first
+        r'\s+Police\s+Station\b',
+        r'\s+Police\s+camp\b',
+        r'\s+Police\s+outpost\b',
+        # Single word descriptors
+        r'\s+District\b',
+        r'\s+Dt\.?\b',
+        r'\s+Dist\.?\b',
+        r'\s+village\b',
+        r'\s+Village\b',
+        r'\s+town\b',
+        r'\s+Town\b',
+        r'\s+State\b',
+        r'\s+mandal\b',
+        r'\s+Mandal\b',
+        r'\s+block\b',
+        r'\s+Block\b',
+        r'\s+area\b',
+        r'\s+Area\b',
+        r'\s+PS\b',
+        r'\s+P\.S\.?\b',
+        r'\s+panchayat\b',
+        r'\s+Panchayat\b',
+        r'\s+Tehsil\b',
+        r'\s+tehsil\b',
+        r'\s+Taluk\b',
+        r'\s+taluk\b',
+        r'\s+Division\b',
+        r'\s+division\b',
+        r'\s+camp\b',
+        r'\s+outpost\b',
+        r'\s+Outpost\b',
+        r'\s+road\b',
+        r'\s+Road\b',
+        r'\s+forest\b',
+        r'\s+Forest\b',
+        r'\s+region\b',
+        r'\s+Region\b',
+        r'\s+locality\b',
+        r'\s+Locality\b',
+    ]
+    
+    normalized = text.strip()
+    
+    # Apply each pattern
+    for pattern in descriptors:
+        normalized = re.sub(pattern, '', normalized, flags=re.IGNORECASE)
+    
+    # Clean up any extra whitespace
+    normalized = ' '.join(normalized.split())
+    
+    return normalized
+
+
 def slot_fill_locations(entities: List[Dict]) -> Dict[str, Optional[str]]:
     """
     Convert entity predictions to slot-filled location structure.
@@ -172,6 +245,7 @@ def slot_fill_locations(entities: List[Dict]) -> Dict[str, Optional[str]]:
     Applies slot-filling logic:
     - STATE, DISTRICT, VILLAGE: take top-1 prediction by score
     - OTHER_LOCATION: collect all remaining + explicit OTHER_LOCATION predictions
+    - Normalizes location names by removing common geographic descriptors
     
     Args:
         entities: List of entity predictions with label, text, and score
@@ -198,23 +272,26 @@ def slot_fill_locations(entities: List[Dict]) -> Dict[str, Optional[str]]:
             # Sort by score descending
             sorted_entities = sorted(by_label[label], key=lambda x: x['score'], reverse=True)
             best = sorted_entities[0]
-            slots[label] = best['text']
+            # Normalize the location text before storing
+            slots[label] = normalize_location_text(best['text'])
     
     # Collect other locations
     # 1. Explicit OTHER_LOCATION predictions
     for entity in by_label['OTHER_LOCATION']:
-        if entity['text'] not in slots['OTHER_LOCATION']:
-            slots['OTHER_LOCATION'].append(entity['text'])
+        normalized_text = normalize_location_text(entity['text'])
+        if normalized_text and normalized_text not in slots['OTHER_LOCATION']:
+            slots['OTHER_LOCATION'].append(normalized_text)
     
     # 2. STATE/DISTRICT/VILLAGE predictions that weren't chosen (lower scoring alternatives)
     chosen_texts = {slots[k] for k in ['STATE', 'DISTRICT', 'VILLAGE'] if slots[k]}
     
     for label in ['STATE', 'DISTRICT', 'VILLAGE']:
         for entity in by_label[label]:
+            normalized_text = normalize_location_text(entity['text'])
             # If this entity wasn't chosen and has decent score, add to other_locations
-            if entity['text'] not in chosen_texts and entity['score'] >= 0.4:
-                if entity['text'] not in slots['OTHER_LOCATION']:
-                    slots['OTHER_LOCATION'].append(entity['text'])
+            if normalized_text and normalized_text not in chosen_texts and entity['score'] >= 0.4:
+                if normalized_text not in slots['OTHER_LOCATION']:
+                    slots['OTHER_LOCATION'].append(normalized_text)
     
     return slots
 
@@ -328,7 +405,7 @@ def save_gliner_predictions_and_metrics(
     save_dataframe_csv_func,
 ) -> None:
     """
-    Save GLiNER predictions and metrics to CSV files.
+    Save GLiNER predictions and metrics to CSV and JSON files.
     
     This function provides a consistent interface for saving predictions,
     matching the behavior of save_bert_predictions_and_metrics.
@@ -343,6 +420,8 @@ def save_gliner_predictions_and_metrics(
         save_dataframe_csv_func: Function to save dataframes (from file_io)
     """
     import pandas as pd
+    import json
+    from pathlib import Path
     
     # Save predictions with incident_number and incident_summary
     predictions_df = pd.DataFrame({
@@ -353,17 +432,26 @@ def save_gliner_predictions_and_metrics(
     })
     save_dataframe_csv_func(predictions_df, f"{model_name}_predictions.csv", task_name)
     
-    # Save metrics summary
-    metrics_df = pd.DataFrame([{
-        'model': model_name,
-        'exact_match': metrics['exact_match'],
-        'fuzzy_match': metrics['fuzzy_match'],
-        'micro_f1': metrics['micro_f1'],
-        'state_f1': metrics['per_level']['state']['f1'],
-        'district_f1': metrics['per_level']['district']['f1'],
-        'village_f1': metrics['per_level']['village']['f1'],
-        'other_locations_f1': metrics['per_level']['other_locations']['f1'],
-    }])
+    # Save comprehensive metrics to JSON (matching seq2seq format)
+    # Import get_task_results_dir to get the correct results directory
+    try:
+        from models.classification_models.utils.file_io import get_task_results_dir
+        results_dir = get_task_results_dir(task_name)
+    except:
+        # Fallback for local mode
+        results_dir = Path(f"./results/{task_name}")
+        results_dir.mkdir(parents=True, exist_ok=True)
+    
+    metrics_path = results_dir / f"{model_name}_metrics.json"
+    with open(metrics_path, 'w') as f:
+        json.dump(metrics, f, indent=2)
+    print(f"✅ {model_name} comprehensive metrics saved to JSON")
+    
+    # Also save flattened CSV for easy comparison
+    from .metrics_utils import flatten_metrics_for_csv
+    flat_metrics = flatten_metrics_for_csv(metrics)
+    flat_metrics['model'] = model_name
+    metrics_df = pd.DataFrame([flat_metrics])
     save_dataframe_csv_func(metrics_df, f"{model_name}_metrics.csv", task_name)
     
     print(f"✅ {model_name} predictions and metrics saved")

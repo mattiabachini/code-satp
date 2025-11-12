@@ -3,6 +3,8 @@
 import re
 
 import pandas as pd
+import json
+from typing import Dict, Any
 
 
 def build_structured_location(row):
@@ -402,4 +404,58 @@ def tokenize_qa(examples, tokenizer, max_length=512, stride=128):
     tokenized_examples['end_positions'] = end_positions
     
     return tokenized_examples
+
+
+# =========================
+# District-State co-occurrence utilities
+# =========================
+
+def compute_district_state_counts(ner_data: list) -> Dict[str, Dict[str, int]]:
+    """
+    Compute co-occurrence counts of (district, state) from ner_data metadata.
+    Returns a nested dict: counts[district][state] = freq
+    """
+    counts: Dict[str, Dict[str, int]] = {}
+    for ex in ner_data:
+        meta = ex.get('metadata', {}) or {}
+        district = str(meta.get('district', '')).strip()
+        state = str(meta.get('state', '')).strip()
+        if not district or not state:
+            continue
+        counts.setdefault(district, {})
+        counts[district][state] = counts[district].get(state, 0) + 1
+    return counts
+
+
+def compute_p_state_given_district(
+    counts: Dict[str, Dict[str, int]],
+    smoothing: float = 1.0
+) -> Dict[str, Dict[str, float]]:
+    """
+    Convert counts to conditional probabilities P(state|district) with Laplace smoothing.
+    """
+    # Collect universe of states seen
+    all_states = set()
+    for d, sd in counts.items():
+        all_states.update(sd.keys())
+    all_states = sorted(all_states)
+
+    probs: Dict[str, Dict[str, float]] = {}
+    for district, state_counts in counts.items():
+        total = sum(state_counts.values()) + smoothing * len(all_states)
+        probs[district] = {}
+        for s in all_states:
+            c = state_counts.get(s, 0)
+            probs[district][s] = (c + smoothing) / total
+    return probs
+
+
+def save_p_state_given_district(path: str, probs: Dict[str, Dict[str, float]]) -> None:
+    with open(path, "w") as f:
+        json.dump(probs, f, ensure_ascii=False, indent=2)
+
+
+def load_p_state_given_district(path: str) -> Dict[str, Dict[str, float]]:
+    with open(path, "r") as f:
+        return json.load(f)
 

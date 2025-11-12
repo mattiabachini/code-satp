@@ -392,3 +392,225 @@ def flatten_metrics_for_csv(metrics):
             flat[f'{level}_support'] = level_data.get('support', 0)
     
     return flat
+
+
+def compute_metrics_from_strings(
+    decoded_preds: list, 
+    decoded_labels: list, 
+    fuzzy_threshold: int = 85
+) -> dict:
+    """
+    Compute comprehensive location extraction metrics from already-decoded strings.
+    
+    This is identical to compute_metrics() but takes decoded strings instead of token IDs.
+    Useful for models that don't use seq2seq tokenization (e.g., BERT NER, GLiNER).
+    
+    Args:
+        decoded_preds: List of predicted location strings in structured format
+        decoded_labels: List of ground truth location strings in structured format
+        fuzzy_threshold: Similarity threshold for fuzzy matching (default: 85)
+    
+    Returns:
+        dict with 'overall' and 'levels' keys:
+        - overall: overall metrics (exact_match, exact_core_match, fuzzy_match, 
+                  fuzzy_core_match, micro-averaged metrics, total_examples)
+        - levels: per-level metrics (state, district, village, other_locations)
+                  each with exact and fuzzy precision/recall/F1/support
+    """
+    # Initialize counters for EXACT matching
+    exact_matches = 0
+    exact_core_matches = 0  # state + district + village only
+    exact_level_metrics = {
+        'state': {'correct': 0, 'predicted': 0, 'total': 0},
+        'district': {'correct': 0, 'predicted': 0, 'total': 0},
+        'village': {'correct': 0, 'predicted': 0, 'total': 0},
+        'other_locations': {'correct': 0, 'predicted': 0, 'total': 0}
+    }
+    
+    # Initialize counters for FUZZY matching
+    fuzzy_matches = 0
+    fuzzy_core_matches = 0  # state + district + village only
+    fuzzy_level_metrics = {
+        'state': {'correct': 0, 'predicted': 0, 'total': 0},
+        'district': {'correct': 0, 'predicted': 0, 'total': 0},
+        'village': {'correct': 0, 'predicted': 0, 'total': 0},
+        'other_locations': {'correct': 0, 'predicted': 0, 'total': 0}
+    }
+    
+    total_examples = len(decoded_preds)
+    
+    for pred, label in zip(decoded_preds, decoded_labels):
+        pred_dict = parse_structured_location(pred)
+        label_dict = parse_structured_location(label)
+        
+        # Check exact match for entire prediction (all 4 fields)
+        if pred_dict == label_dict:
+            exact_matches += 1
+        
+        # Check exact match for core geographic hierarchy (state + district + village only)
+        core_exact_match = True
+        for level in ['state', 'district', 'village']:
+            if pred_dict[level] != label_dict[level]:
+                core_exact_match = False
+                break
+        if core_exact_match:
+            exact_core_matches += 1
+        
+        # Check fuzzy match for entire prediction (all 4 fields must fuzzy match)
+        all_levels_fuzzy_match = True
+        for level in ['state', 'district', 'village', 'other_locations']:
+            if not fuzzy_match(pred_dict[level], label_dict[level], threshold=fuzzy_threshold):
+                all_levels_fuzzy_match = False
+                break
+        if all_levels_fuzzy_match:
+            fuzzy_matches += 1
+        
+        # Check fuzzy match for core geographic hierarchy (state + district + village only)
+        core_fuzzy_match = True
+        for level in ['state', 'district', 'village']:
+            if not fuzzy_match(pred_dict[level], label_dict[level], threshold=fuzzy_threshold):
+                core_fuzzy_match = False
+                break
+        if core_fuzzy_match:
+            fuzzy_core_matches += 1
+        
+        # Compute per-level metrics (EXACT)
+        for level in ['state', 'district', 'village']:
+            if label_dict[level] is not None:
+                exact_level_metrics[level]['total'] += 1
+            if pred_dict[level] is not None:
+                exact_level_metrics[level]['predicted'] += 1
+            if pred_dict[level] is not None and label_dict[level] is not None:
+                if pred_dict[level].lower() == label_dict[level].lower():
+                    exact_level_metrics[level]['correct'] += 1
+        
+        # Compute per-level metrics (FUZZY)
+        for level in ['state', 'district', 'village']:
+            if label_dict[level] is not None:
+                fuzzy_level_metrics[level]['total'] += 1
+            if pred_dict[level] is not None:
+                fuzzy_level_metrics[level]['predicted'] += 1
+            if pred_dict[level] is not None and label_dict[level] is not None:
+                if fuzzy_match(pred_dict[level], label_dict[level], threshold=fuzzy_threshold):
+                    fuzzy_level_metrics[level]['correct'] += 1
+        
+        # Special handling for other_locations (token-level F1) - EXACT
+        if label_dict['other_locations'] is not None:
+            label_tokens = set([t.strip().lower() for t in label_dict['other_locations'].split(',') if t.strip()])
+            exact_level_metrics['other_locations']['total'] += len(label_tokens)
+            
+            if pred_dict['other_locations'] is not None:
+                pred_tokens = set([t.strip().lower() for t in pred_dict['other_locations'].split(',') if t.strip()])
+                exact_level_metrics['other_locations']['predicted'] += len(pred_tokens)
+                exact_level_metrics['other_locations']['correct'] += len(pred_tokens & label_tokens)
+        elif pred_dict['other_locations'] is not None:
+            # Prediction exists but label is None (false positives)
+            pred_tokens = set([t.strip().lower() for t in pred_dict['other_locations'].split(',') if t.strip()])
+            exact_level_metrics['other_locations']['predicted'] += len(pred_tokens)
+        
+        # Special handling for other_locations (token-level F1) - FUZZY
+        if label_dict['other_locations'] is not None:
+            label_tokens = [t.strip() for t in label_dict['other_locations'].split(',') if t.strip()]
+            fuzzy_level_metrics['other_locations']['total'] += len(label_tokens)
+            
+            if pred_dict['other_locations'] is not None:
+                pred_tokens = [t.strip() for t in pred_dict['other_locations'].split(',') if t.strip()]
+                fuzzy_level_metrics['other_locations']['predicted'] += len(pred_tokens)
+                
+                # For fuzzy matching, count matches using fuzzy string similarity
+                matched_pred = set()
+                matched_label = set()
+                for p_idx, p_token in enumerate(pred_tokens):
+                    for l_idx, l_token in enumerate(label_tokens):
+                        if l_idx not in matched_label and fuzzy_match(p_token, l_token, threshold=fuzzy_threshold):
+                            fuzzy_level_metrics['other_locations']['correct'] += 1
+                            matched_pred.add(p_idx)
+                            matched_label.add(l_idx)
+                            break
+        elif pred_dict['other_locations'] is not None:
+            # Prediction exists but label is None (false positives)
+            pred_tokens = [t.strip() for t in pred_dict['other_locations'].split(',') if t.strip()]
+            fuzzy_level_metrics['other_locations']['predicted'] += len(pred_tokens)
+    
+    # Compute precision, recall, F1 for each level (EXACT)
+    overall_metrics = {
+        'exact_match': exact_matches / total_examples * 100,
+        'exact_core_match': exact_core_matches / total_examples * 100,
+        'fuzzy_match': fuzzy_matches / total_examples * 100,
+        'fuzzy_core_match': fuzzy_core_matches / total_examples * 100,
+        'total_examples': total_examples
+    }
+    
+    # Compute micro-averaged metrics (EXACT)
+    total_correct = sum(exact_level_metrics[level]['correct'] for level in ['state', 'district', 'village', 'other_locations'])
+    total_predicted = sum(exact_level_metrics[level]['predicted'] for level in ['state', 'district', 'village', 'other_locations'])
+    total_actual = sum(exact_level_metrics[level]['total'] for level in ['state', 'district', 'village', 'other_locations'])
+    
+    micro_exact_precision = (total_correct / total_predicted * 100) if total_predicted > 0 else 0
+    micro_exact_recall = (total_correct / total_actual * 100) if total_actual > 0 else 0
+    micro_exact_f1 = (2 * micro_exact_precision * micro_exact_recall / (micro_exact_precision + micro_exact_recall)) if (micro_exact_precision + micro_exact_recall) > 0 else 0
+    
+    overall_metrics['micro_exact_precision'] = micro_exact_precision
+    overall_metrics['micro_exact_recall'] = micro_exact_recall
+    overall_metrics['micro_exact_f1'] = micro_exact_f1
+    
+    # Compute micro-averaged metrics (FUZZY)
+    total_correct = sum(fuzzy_level_metrics[level]['correct'] for level in ['state', 'district', 'village', 'other_locations'])
+    total_predicted = sum(fuzzy_level_metrics[level]['predicted'] for level in ['state', 'district', 'village', 'other_locations'])
+    total_actual = sum(fuzzy_level_metrics[level]['total'] for level in ['state', 'district', 'village', 'other_locations'])
+    
+    micro_fuzzy_precision = (total_correct / total_predicted * 100) if total_predicted > 0 else 0
+    micro_fuzzy_recall = (total_correct / total_actual * 100) if total_actual > 0 else 0
+    micro_fuzzy_f1 = (2 * micro_fuzzy_precision * micro_fuzzy_recall / (micro_fuzzy_precision + micro_fuzzy_recall)) if (micro_fuzzy_precision + micro_fuzzy_recall) > 0 else 0
+    
+    overall_metrics['micro_fuzzy_precision'] = micro_fuzzy_precision
+    overall_metrics['micro_fuzzy_recall'] = micro_fuzzy_recall
+    overall_metrics['micro_fuzzy_f1'] = micro_fuzzy_f1
+    
+    # Compute per-level metrics
+    level_metrics = {}
+    for level in ['state', 'district', 'village', 'other_locations']:
+        level_metrics[level] = {}
+        
+        # Exact metrics
+        exact_metrics = exact_level_metrics[level]
+        exact_precision = (exact_metrics['correct'] / exact_metrics['predicted'] * 100) if exact_metrics['predicted'] > 0 else 0
+        exact_recall = (exact_metrics['correct'] / exact_metrics['total'] * 100) if exact_metrics['total'] > 0 else 0
+        exact_f1 = (2 * exact_precision * exact_recall / (exact_precision + exact_recall)) if (exact_precision + exact_recall) > 0 else 0
+        
+        level_metrics[level]['exact_precision'] = exact_precision
+        level_metrics[level]['exact_recall'] = exact_recall
+        level_metrics[level]['exact_f1'] = exact_f1
+        level_metrics[level]['support'] = exact_metrics['total']
+        
+        # Fuzzy metrics
+        fuzzy_metrics = fuzzy_level_metrics[level]
+        fuzzy_precision = (fuzzy_metrics['correct'] / fuzzy_metrics['predicted'] * 100) if fuzzy_metrics['predicted'] > 0 else 0
+        fuzzy_recall = (fuzzy_metrics['correct'] / fuzzy_metrics['total'] * 100) if fuzzy_metrics['total'] > 0 else 0
+        fuzzy_f1 = (2 * fuzzy_precision * fuzzy_recall / (fuzzy_precision + fuzzy_recall)) if (fuzzy_precision + fuzzy_recall) > 0 else 0
+        
+        level_metrics[level]['fuzzy_precision'] = fuzzy_precision
+        level_metrics[level]['fuzzy_recall'] = fuzzy_recall
+        level_metrics[level]['fuzzy_f1'] = fuzzy_f1
+    
+    return {
+        'overall': overall_metrics,
+        'levels': level_metrics
+    }
+
+
+def compute_macro_f1(y_true: np.ndarray, y_pred: np.ndarray, num_classes: int) -> float:
+    """
+    Compute macro-averaged F1 over num_classes given integer labels.
+    """
+    eps = 1e-12
+    f1s = []
+    for c in range(num_classes):
+        tp = int(((y_pred == c) & (y_true == c)).sum())
+        fp = int(((y_pred == c) & (y_true != c)).sum())
+        fn = int(((y_pred != c) & (y_true == c)).sum())
+        precision = tp / (tp + fp + eps)
+        recall = tp / (tp + fn + eps)
+        f1 = 2 * precision * recall / (precision + recall + eps)
+        f1s.append(f1)
+    return float(np.mean(f1s))
