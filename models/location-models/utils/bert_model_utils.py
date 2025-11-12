@@ -214,9 +214,7 @@ def prepare_ner_dataset(
         batched=True,
         remove_columns=['text', 'entities'],
     )
-    # Keep state_label as-is if present
-    if 'state_labels' in dataset.column_names:
-        tokenized_dataset = tokenized_dataset.add_column('state_labels', dataset['state_labels'])
+    # Note: state_labels is automatically preserved since it's not in remove_columns
     
     return tokenized_dataset
 
