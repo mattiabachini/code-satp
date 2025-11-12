@@ -698,6 +698,7 @@ def run_span_ner_model(
     batch_size: int = 16,
     learning_rate: float = 5e-5,
     max_length: int = 512,
+    early_stopping_patience: int = 3,
     device: Optional[torch.device] = None,
 ) -> Dict[str, Any]:
     """
@@ -712,6 +713,8 @@ def run_span_ner_model(
         num_epochs: Number of training epochs
         batch_size: Batch size
         learning_rate: Learning rate
+        max_length: Max sequence length
+        early_stopping_patience: Patience for early stopping
         device: Device to run on
         
     Returns:
@@ -738,6 +741,7 @@ def run_span_ner_model(
         batch_size=batch_size,
         learning_rate=learning_rate,
         max_length=max_length,
+        early_stopping_patience=early_stopping_patience,
     )
     
     # Move to device if specified
