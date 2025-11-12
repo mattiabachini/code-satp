@@ -253,6 +253,7 @@ def train_span_ner_model(
     use_multitask: bool = True,
     lambda_state: float = 1.0,
     mu_kl: float = 0.0,
+    seed: int = 42,
 ) -> Tuple[Any, Any, Dict]:
     """
     Train a BERT-based span-NER model.
@@ -272,6 +273,7 @@ def train_span_ner_model(
         use_multitask: If True, use MultiTaskLocationModel with state classifier head
         lambda_state: Weight for state classification loss
         mu_kl: Weight for KL alignment term (0 to disable)
+        seed: Random seed for reproducibility
         
     Returns:
         Tuple of (model, tokenizer, training_metrics)
@@ -353,6 +355,7 @@ def train_span_ner_model(
         "logging_dir": f"{output_dir}/logs",
         "logging_steps": 50,
         "report_to": ["tensorboard"],
+        "seed": seed,
     }
     # Filter unsupported args for older/newer transformers versions
     accepted_params = set(inspect.signature(TrainingArguments.__init__).parameters.keys())
@@ -680,6 +683,7 @@ def run_span_ner_model(
     max_length: int = 512,
     early_stopping_patience: int = 3,
     device: Optional[torch.device] = None,
+    seed: int = 42,
 ) -> Dict[str, Any]:
     """
     Complete pipeline: train, evaluate, and save a span-NER model.
@@ -696,6 +700,7 @@ def run_span_ner_model(
         max_length: Max sequence length
         early_stopping_patience: Patience for early stopping
         device: Device to run on
+        seed: Random seed for reproducibility
         
     Returns:
         Dict with model, tokenizer, metrics, and predictions
@@ -722,6 +727,7 @@ def run_span_ner_model(
         learning_rate=learning_rate,
         max_length=max_length,
         early_stopping_patience=early_stopping_patience,
+        seed=seed,
     )
     
     # Move to device if specified
