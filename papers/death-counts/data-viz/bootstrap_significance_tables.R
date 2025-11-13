@@ -500,11 +500,20 @@ process_model_group <- function(model_names, results_dir, model_type, output_fil
       )
   }
   
+  # Create readable title label for model type
+  title_label <- if (model_type == "llm") {
+    "LLMs"
+  } else if (model_type == "seq2seq") {
+    "seq2seq"
+  } else {
+    tools::toTitleCase(model_type)
+  }
+  
   # Create GT table
   gt_table <- table_data |>
     gt() |>
     tab_header(
-      title = paste("Death Count Model Comparison:", tools::toTitleCase(model_type)),
+      title = paste("Death Count Model Comparison:", title_label),
       subtitle = paste("Bootstrap significance testing (n =", N_BOOT, "reps) vs ConfliBERT-Poisson baseline")
     ) |>
     fmt_number(

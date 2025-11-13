@@ -23,6 +23,7 @@ set.seed(42)  # Set seed for reproducibility
 
 # Model files to process (excluding GLiNER)
 models <- c(
+  "confliBERT",
   "deberta-v3",
   "muril",
   "spanbert",

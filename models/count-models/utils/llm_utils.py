@@ -189,7 +189,11 @@ def load_causal(model_id: str, token: Optional[str] = None):
     if USE_4BIT:
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=DTYPE,
+            # Use NF4 with double quantization for better memory efficiency
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            # Prefer bfloat16 compute on Ampere+ (safe on others; falls back when unsupported)
+            bnb_4bit_compute_dtype=torch.bfloat16,
         )
 
     try:

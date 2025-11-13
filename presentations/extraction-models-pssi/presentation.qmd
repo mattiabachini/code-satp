@@ -1,0 +1,121 @@
+---
+title: "Comparing Encoder-Based Models for Event Coding"
+subtitle: "Evidence from the South Asia Terrorism Portal"
+author:
+  - name: Emmanuel Teitelbaum
+  - name: Mohiddin Bacha Shaik
+date: today
+date-format: long
+footer: "[View Our Code and Data](https://github.com/eteitelbaum/code-satp)"
+logo: images/esia-logo.png
+format:
+  revealjs:
+    theme: [simple, custom.scss]
+    transition: fade
+    slide-number: true
+    chalkboard: true
+execute:
+  echo: false
+  message: false
+  warning: false
+params: 
+  reps: 1000
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+# Load necessary packages
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(pROC)
+library(knitr)
+library(viridis)
+library(readr)
+library(here) 
+library(janitor)
+library(patchwork)
+
+# Declare location of presentation
+here::i_am("presentation.qmd")
+```
+
+## Overview
+
+- Focus: Maoist insurgency in India 
+- Data set of 10k hand-coded events from SATP over 2005-2016
+- Charactersitic of bespoke datasets with niche labels and lexical complexity that we find in regional and conflict studies
+- How much can autocode these events with low-cost open-source models?
+
+## Data: South Asia Terrorism Portal (SATP)
+
+- Focus: Maoist insurgency in India
+- 10,000 hand-coded event summaries
+
+![](images/other/satp-summary.png)
+
+## Counts and Locations
+
+- 
+
+
+## Sequence to Sequence (seq2seq) Models
+
+
+
+## Protocols for Human Codings
+
+- Grad student supervisor
+- 4-6 undergrads coding in pairs
+- Structured onboarding
+- Supervised trials
+- Events double-coded
+- Regular meetings to adjudicate edge cases
+- Discrepancies resolved by senior coders
+
+## Research Questions
+
+- To what extent can encoder models replace humans at our coding tasks?
+- How many examples do you need for accurate codings? 
+- How do encoders trade off in terms of speed and accuracy? 
+- How best to deal with rare labels? 
+
+## 
+
+![](images/death-counts/bootstrap_mae_combined.png)
+
+## 
+
+![](images/death-counts/bootstrap_significance_seq2seq.png)
+
+## 
+
+![](images/death-counts/bootstrap_significance_llms.png)
+
+## 
+
+![](images/death-counts/death_counts_seq2seq_bins.png)
+##
+
+![](images/death-counts/death_counts_llms_bins.png)
+
+## Comments?
+
+:::{.columns}
+
+::: {.column width="50%"}
+Thank you! 🙏
+
+<br>
+<br>
+
+We look forward to your feedback...
+:::
+
+::: {.column width="50%"}
+{{< qrcode https://eteitelbaum.quarto.pub/code-satp-presi/ width=400 height=400 colorDark='#00264A' >}}
+:::
+
+:::
