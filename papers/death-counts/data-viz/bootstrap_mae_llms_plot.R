@@ -21,7 +21,6 @@ set.seed(42)
 
 # Model files to process
 models <- c(
-  "gemini_flash",
   "gpt4o_mini", 
   "llama3_8b",
   "mistral_7b",

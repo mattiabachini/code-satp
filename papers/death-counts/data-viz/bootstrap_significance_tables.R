@@ -32,8 +32,7 @@ LLM_MODELS <- c(
   "gpt4o_mini",
   "llama3_8b",
   "mistral_7b",
-  "mixtral_8x7b",
-  "gemini_flash"
+  "mixtral_8x7b"
 )
 
 BASELINE_NAME <- "conflibert-poisson"

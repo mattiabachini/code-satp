@@ -7,7 +7,6 @@ library(viridis)
 
 # Define models to include
 models <- c(
-  "gemini_flash",
   "gpt4o_mini",
   "llama3_8b",
   "mistral_7b",
