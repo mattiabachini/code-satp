@@ -1,0 +1,59 @@
+{
+  "overall": {
+    "exact_match": 14.530776992936428,
+    "exact_core_match": 39.354187689202824,
+    "fuzzy_match": 18.163471241170534,
+    "fuzzy_core_match": 40.867810292633706,
+    "total_examples": 991,
+    "micro_exact_precision": 65.19337016574586,
+    "micro_exact_recall": 75.78676942838793,
+    "micro_exact_f1": 70.0920700920701,
+    "micro_fuzzy_precision": 67.07182320441989,
+    "micro_fuzzy_recall": 77.97045600513809,
+    "micro_fuzzy_f1": 72.11167211167209
+  },
+  "levels": {
+    "state": {
+      "exact_precision": 97.44637385086823,
+      "exact_recall": 96.26639757820384,
+      "exact_f1": 96.85279187817258,
+      "support": 991,
+      "fuzzy_precision": 97.44637385086823,
+      "fuzzy_recall": 96.26639757820384,
+      "fuzzy_f1": 96.85279187817258
+    },
+    "district": {
+      "exact_precision": 94.11167512690355,
+      "exact_recall": 93.54187689202826,
+      "exact_f1": 93.82591093117409,
+      "support": 991,
+      "fuzzy_precision": 96.34517766497463,
+      "fuzzy_recall": 95.76185671039354,
+      "fuzzy_f1": 96.05263157894737
+    },
+    "village": {
+      "exact_precision": 42.30769230769231,
+      "exact_recall": 78.42003853564547,
+      "exact_f1": 54.9628629304524,
+      "support": 519,
+      "fuzzy_precision": 42.723492723492726,
+      "fuzzy_recall": 79.1907514450867,
+      "fuzzy_f1": 55.50303848750845
+    },
+    "other_locations": {
+      "exact_precision": 10.37463976945245,
+      "exact_recall": 11.745513866231647,
+      "exact_f1": 11.01759755164499,
+      "support": 613,
+      "fuzzy_precision": 16.42651296829971,
+      "fuzzy_recall": 18.59706362153344,
+      "fuzzy_f1": 17.444529456771228
+    }
+  },
+  "timing": {
+    "total_time_seconds": 792.4143738746643,
+    "time_per_item_seconds": 0.7996108717201457,
+    "throughput_items_per_second": 1.2506083088249809,
+    "num_items": 991
+  }
+}
