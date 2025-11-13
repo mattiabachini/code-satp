@@ -1,59 +1,59 @@
 {
   "overall": {
-    "exact_match": 32.08879919273461,
-    "exact_core_match": 67.30575176589304,
-    "fuzzy_match": 34.914228052472254,
-    "fuzzy_core_match": 69.52573158425832,
-    "total_examples": 991,
-    "micro_exact_precision": 73.80230442692542,
-    "micro_exact_recall": 78.1631342324984,
-    "micro_exact_f1": 75.92014971927637,
-    "micro_fuzzy_precision": 75.2274105518496,
-    "micro_fuzzy_recall": 79.67244701348748,
-    "micro_fuzzy_f1": 77.38615096693701
+    "exact_match": 25.100806451612907,
+    "exact_core_match": 59.87903225806451,
+    "fuzzy_match": 27.318548387096776,
+    "fuzzy_core_match": 60.98790322580645,
+    "total_examples": 992,
+    "micro_exact_precision": 70.03030303030303,
+    "micro_exact_recall": 80.6913407821229,
+    "micro_exact_f1": 74.98377676833225,
+    "micro_fuzzy_precision": 71.06060606060606,
+    "micro_fuzzy_recall": 81.87849162011173,
+    "micro_fuzzy_f1": 76.08695652173914
   },
   "levels": {
     "state": {
-      "exact_precision": 97.46450304259635,
-      "exact_recall": 96.97275479313825,
-      "exact_f1": 97.21800708143651,
-      "support": 991,
-      "fuzzy_precision": 97.46450304259635,
-      "fuzzy_recall": 96.97275479313825,
-      "fuzzy_f1": 97.21800708143651
+      "exact_precision": 96.6497461928934,
+      "exact_recall": 95.96774193548387,
+      "exact_f1": 96.30753667172485,
+      "support": 992,
+      "fuzzy_precision": 96.6497461928934,
+      "fuzzy_recall": 95.96774193548387,
+      "fuzzy_f1": 96.30753667172485
     },
     "district": {
-      "exact_precision": 93.80710659898477,
-      "exact_recall": 93.23915237134209,
-      "exact_f1": 93.52226720647775,
-      "support": 991,
-      "fuzzy_precision": 96.24365482233502,
-      "fuzzy_recall": 95.66094853683148,
-      "fuzzy_f1": 95.95141700404858
+      "exact_precision": 95.82484725050917,
+      "exact_recall": 94.85887096774194,
+      "exact_f1": 95.33941236068895,
+      "support": 992,
+      "fuzzy_precision": 96.43584521384929,
+      "fuzzy_recall": 95.46370967741935,
+      "fuzzy_f1": 95.94731509625127
     },
     "village": {
-      "exact_precision": 64.95176848874597,
-      "exact_recall": 77.84200385356455,
-      "exact_f1": 70.81507449605608,
-      "support": 519,
-      "fuzzy_precision": 65.59485530546624,
-      "fuzzy_recall": 78.61271676300578,
-      "fuzzy_f1": 71.51621384750219
+      "exact_precision": 48.5133020344288,
+      "exact_recall": 83.33333333333334,
+      "exact_f1": 61.32542037586549,
+      "support": 372,
+      "fuzzy_precision": 49.92175273865415,
+      "fuzzy_recall": 85.75268817204301,
+      "fuzzy_f1": 63.10583580613254
     },
     "other_locations": {
-      "exact_precision": 20.56737588652482,
-      "exact_recall": 23.65415986949429,
-      "exact_f1": 22.003034901365705,
-      "support": 613,
-      "fuzzy_precision": 23.26241134751773,
-      "fuzzy_recall": 26.753670473083197,
-      "fuzzy_f1": 24.886191198786037
+      "exact_precision": 15.561959654178676,
+      "exact_recall": 21.25984251968504,
+      "exact_f1": 17.970049916805326,
+      "support": 508,
+      "fuzzy_precision": 18.29971181556196,
+      "fuzzy_recall": 25.0,
+      "fuzzy_f1": 21.13144758735441
     }
   },
   "timing": {
-    "total_time_seconds": 1525.305804491043,
-    "time_per_item_seconds": 1.5391582285479748,
-    "throughput_items_per_second": 0.6497057816748244,
-    "num_items": 991
+    "total_time_seconds": 1373.5741686820984,
+    "time_per_item_seconds": 1.3846513797198572,
+    "throughput_items_per_second": 0.7222034474860525,
+    "num_items": 992
   }
 }
