@@ -25,7 +25,7 @@ from huggingface_hub.utils import GatedRepoError
 # Configuration constants
 DEVICE = 0 if torch.cuda.is_available() else -1
 DTYPE = torch.float16
-USE_4BIT = True
+USE_4BIT = False
 
 # Instruction template for prompts
 INSTR = (
@@ -261,21 +261,26 @@ def run_causal_batch(
     model, 
     texts: List[str], 
     max_new_tokens: int = 48,
+    max_input_tokens: int = 512,
+    batch_size: int = 16,
     show_progress: bool = True
 ):
     """
-    Run inference on a batch of texts using a causal LM.
+    Batched generation for decoder-only LMs (Llama/Mistral) with left padding.
     
     Args:
         tok: Tokenizer
         model: Causal language model
         texts: List of input texts
         max_new_tokens: Maximum tokens to generate
+        max_input_tokens: Maximum input tokens (truncate for speed)
+        batch_size: Number of prompts to process in parallel
         show_progress: Whether to show progress
         
     Returns:
         list: List of model output strings
     """
+    # Deterministic generation
     if hasattr(model, "generation_config"):
         try:
             model.generation_config.do_sample = False
@@ -287,46 +292,57 @@ def run_causal_batch(
         except AttributeError:
             pass
 
-    outs = []
-    total = len(texts)
+    # Ensure pad token exists for batching
+    if getattr(tok, "pad_token", None) is None and getattr(tok, "eos_token", None) is not None:
+        tok.pad_token = tok.eos_token
+    if getattr(tok, "pad_token_id", None) is None and getattr(tok, "eos_token_id", None) is not None:
+        tok.pad_token_id = tok.eos_token_id
 
-    progress_bar = None
-    use_simple_progress = False
-    if show_progress and total > 0:
-        if tqdm is not None:
-            progress_bar = tqdm(total=total, desc="Generating", leave=False)
-        else:
-            use_simple_progress = True
-            print("  Processing 0/{}...".format(total), end='\r', flush=True)
-    
-    for i, t in enumerate(texts):
+    prompts = [make_input(t) for t in texts]
+    outs: List[str] = []
+    total = len(prompts)
+    num_batches = (total + batch_size - 1) // batch_size
+
+    progress_bar = tqdm(total=total, desc="Generating", leave=False) if (show_progress and tqdm and total > 0) else None
+    use_simple_progress = show_progress and (progress_bar is None) and total > 0
+    if use_simple_progress:
+        print(f"  Processing 0/{total}...", end="\r", flush=True)
+
+    for b in range(num_batches):
+        start = b * batch_size
+        end = min(start + batch_size, total)
+        batch_prompts = prompts[start:end]
         if use_simple_progress:
-            print(f"  Processing {i + 1}/{total}...", end='\r', flush=True)
-        
-        # Use standardized basic prompt for all models (fair comparison)
-        prompt = make_input(t)
-        
-        inputs = tok(prompt, return_tensors="pt").to(model.device)
+            print(f"  Processing {end}/{total}...", end="\r", flush=True)
+
+        inputs = tok(
+            batch_prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=max_input_tokens
+        ).to(model.device)
+
         gen = model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
             do_sample=False,
-            pad_token_id=tok.eos_token_id
+            pad_token_id=tok.pad_token_id
         )
-        out = tok.decode(
-            gen[0][inputs["input_ids"].shape[1]:], 
-            skip_special_tokens=True
-        ).strip()
-        outs.append(out)
 
-        if progress_bar is not None:
-            progress_bar.update(1)
-    
+        # Decode each output in the batch (skip prompt portion)
+        for i in range(len(batch_prompts)):
+            input_len = inputs["input_ids"][i].shape[0]
+            out = tok.decode(gen[i][input_len:], skip_special_tokens=True).strip()
+            outs.append(out)
+            if progress_bar is not None:
+                progress_bar.update(1)
+
     if progress_bar is not None:
         progress_bar.close()
-    elif show_progress and total > 0:
+    elif use_simple_progress:
         print(f"  Completed {total}/{total}      ")
-    
+
     return outs
 
 
@@ -337,67 +353,51 @@ def run_t5_batch(
     texts: List[str], 
     max_new_tokens: int = 32,
     max_input_tokens: int = 512,
+    batch_size: int = 16,
     show_progress: bool = True
 ):
     """
-    Run inference on a batch of texts using a T5 model.
-    
-    Args:
-        tok: Tokenizer
-        model: T5 seq2seq model
-        texts: List of input texts
-        max_new_tokens: Maximum tokens to generate
-        max_input_tokens: Maximum tokens for encoder input (truncates beyond limit)
-        show_progress: Whether to show progress
-        
-    Returns:
-        list: List of model output strings
+    Batched generation for T5 seq2seq models with truncation.
     """
-    outs = []
-    total = len(texts)
+    prompts = [
+        make_input_t5_fewshot(t) if USE_T5_FEWSHOT else make_input_t5(t)
+        for t in texts
+    ]
+    outs: List[str] = []
+    total = len(prompts)
+    num_batches = (total + batch_size - 1) // batch_size
     truncated = 0
 
-    progress_bar = None
-    use_simple_progress = False
-    if show_progress and total > 0:
-        if tqdm is not None:
-            progress_bar = tqdm(total=total, desc="Generating", leave=False)
-        else:
-            use_simple_progress = True
-            print("  Processing 0/{}...".format(total), end='\r', flush=True)
-    
-    for i, t in enumerate(texts):
+    progress_bar = tqdm(total=total, desc="Generating (T5)", leave=False) if (show_progress and tqdm and total > 0) else None
+    use_simple_progress = show_progress and (progress_bar is None) and total > 0
+    if use_simple_progress:
+        print(f"  Processing 0/{total}...", end="\r", flush=True)
+
+    for b in range(num_batches):
+        start = b * batch_size
+        end = min(start + batch_size, total)
+        batch_prompts = prompts[start:end]
         if use_simple_progress:
-            print(f"  Processing {i + 1}/{total}...", end='\r', flush=True)
-        
-        # Use a T5-specific prompt format (few-shot optional)
-        prompt = make_input_t5_fewshot(t) if USE_T5_FEWSHOT else make_input_t5(t)
-        # First, probe for overflow WITHOUT tensors to avoid ragged tensor errors
-        try:
-            probe = tok(
-                prompt,
-                truncation=True,
-                max_length=max_input_tokens,
-                return_overflowing_tokens=True,
-            )
-            if isinstance(probe, dict) and probe.get("overflowing_tokens") is not None:
-                truncated += 1
-            else:
-                # Fallback length-based check (best-effort)
-                ids = probe.get("input_ids")
-                if isinstance(ids, list) and len(ids) >= max_input_tokens:
-                    truncated += 1
-        except Exception:
-            # If probing fails, continue without marking
-            pass
-        # Now encode with tensors for generation (no overflowing tokens here)
+            print(f"  Processing {end}/{total}...", end="\r", flush=True)
+
         encoded = tok(
-            prompt,
+            batch_prompts,
             return_tensors="pt",
+            padding=True,
             truncation=True,
             max_length=max_input_tokens,
         )
-        # Only pass expected inputs to generate (avoid keys like 'overflow_to_sample_mapping')
+        # Approximate truncation count: inputs at max length
+        try:
+            ids = encoded.get("input_ids")
+            if ids is not None:
+                # ids is a tensor [batch, seq]
+                if hasattr(ids, "shape") and ids.shape[1] >= max_input_tokens:
+                    # Count all rows that hit the ceiling
+                    truncated += int((ids.shape[1] >= max_input_tokens))
+        except Exception:
+            pass
+
         tensor_inputs = {
             "input_ids": encoded["input_ids"].to(model.device),
             "attention_mask": encoded["attention_mask"].to(model.device),
@@ -407,20 +407,19 @@ def run_t5_batch(
             max_new_tokens=max_new_tokens,
             do_sample=False
         )
-        out = tok.decode(gen[0], skip_special_tokens=True).strip()
-        outs.append(out)
+        for i in range(gen.shape[0]):
+            outs.append(tok.decode(gen[i], skip_special_tokens=True).strip())
+            if progress_bar is not None:
+                progress_bar.update(1)
 
-        if progress_bar is not None:
-            progress_bar.update(1)
-    
     if progress_bar is not None:
         progress_bar.close()
-    elif show_progress and total > 0:
+    elif use_simple_progress:
         print(f"  Completed {total}/{total}      ")
 
     if truncated > 0:
         print(f"⚠️  Warning: {truncated} input(s) truncated to {max_input_tokens} tokens.")
-    
+
     return outs
 
 
@@ -429,35 +428,19 @@ def run_openai_batch(
     api_key: Optional[str] = None,
     model_name: str = "gpt-4o-mini",
     max_tokens: int = 50,
-    rate_limit_delay: float = 0.1,
+    rate_limit_delay: float = 0.05,
+    max_concurrency: int = 8,
     show_progress: bool = True
 ):
     """
-    Run inference on a batch of texts using OpenAI API.
-    
-    Args:
-        texts: List of input texts
-        api_key: OpenAI API key (if None, tries to get from environment/secrets)
-        model_name: OpenAI model name
-        max_tokens: Maximum tokens to generate
-        rate_limit_delay: Delay between requests (seconds)
-        show_progress: Whether to show progress
-        
-    Returns:
-        list: List of model output strings
-        
-    Raises:
-        ValueError: If API key is not found
-        Exception: If API call fails
+    Parallel OpenAI calls with bounded concurrency; preserves order.
     """
     # Try to get API key from various sources
     if api_key is None:
         try:
-            # Try Colab secrets first
             from google.colab import userdata
             api_key = userdata.get('openai_api_key')
         except ImportError:
-            # Try environment variable
             import os
             api_key = os.environ.get('OPENAI_API_KEY')
     
@@ -475,51 +458,53 @@ def run_openai_batch(
             "openai package not installed. Install with: pip install openai>=1.0.0"
         )
     
-    outs = []
-    total = len(texts)
+    prompts = [make_input(t) for t in texts]
+    outs: List[str] = [""] * len(prompts)
+    total = len(prompts)
     errors = 0
-    # Progress handling (align with Gemini/Causal/T5)
-    progress_bar = None
-    use_simple_progress = False
-    if show_progress and total > 0:
-        if tqdm is not None:
-            progress_bar = tqdm(total=total, desc="Generating (OpenAI)", leave=False)
-        else:
-            use_simple_progress = True
-            print(f"  Processing 0/{total}...", flush=True)
-    
-    for i, text in enumerate(texts):
+
+    progress_bar = tqdm(total=total, desc="Generating (OpenAI)", leave=False) if (show_progress and tqdm and total > 0) else None
+    use_simple_progress = show_progress and (progress_bar is None) and total > 0
+    if use_simple_progress:
+        print(f"  Processing 0/{total}...", flush=True)
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _one(idx: int, prompt: str) -> tuple[int, str, bool]:
+        ok = True
         try:
-            # Use standardized basic prompt for all models (fair comparison)
             response = client.chat.completions.create(
                 model=model_name,
-                messages=[
-                    {"role": "user", "content": make_input(text)}
-                ],
+                messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens,
                 temperature=0.0
             )
             out = response.choices[0].message.content.strip()
-            outs.append(out)
-        except Exception as e:
-            # Don't print error here to avoid disrupting progress bar
-            outs.append("")  # Empty string on error
-            errors += 1
-        
-        if progress_bar is not None:
-            progress_bar.update(1)
-        elif use_simple_progress:
-            print(f"  Processing {i + 1}/{total}...", flush=True)
-        
-        # Rate limiting
+        except Exception:
+            out = ""
+            ok = False
         if rate_limit_delay > 0:
             time.sleep(rate_limit_delay)
+        return idx, out, ok
+
+    if total > 0:
+        with ThreadPoolExecutor(max_workers=max(1, int(max_concurrency))) as executor:
+            futures = [executor.submit(_one, i, p) for i, p in enumerate(prompts)]
+            for fut in as_completed(futures):
+                idx, out, ok = fut.result()
+                outs[idx] = out
+                if not ok:
+                    errors += 1
+                if progress_bar is not None:
+                    progress_bar.update(1)
+                elif use_simple_progress:
+                    done = sum(1 for f in futures if f.done())
+                    print(f"  Processing {done}/{total}...", flush=True)
     
     if progress_bar is not None:
         progress_bar.close()
-    
-    if show_progress:
-        print(f"  Completed {total}/{total} (errors: {errors})      ")
+    elif use_simple_progress:
+        print(f"  Completed {total}/{total}      ")
     
     if errors > 0:
         print(f"⚠️  Warning: {errors} errors occurred during API calls")
@@ -532,37 +517,20 @@ def run_gemini_batch(
     api_key: Optional[str] = None,
     model_name: str = "gemini-1.5-flash-latest",
     max_output_tokens: int = 50,
-    rate_limit_delay: float = 0.1,
+    rate_limit_delay: float = 0.05,
     show_progress: bool = True,
     max_retries: int = 4,
+    max_concurrency: int = 8,
 ):
     """
-    Run inference on a batch of texts using Google Gemini API.
-    
-    Args:
-        texts: List of input texts
-        api_key: Gemini API key (if None, tries to get from environment/secrets)
-        model_name: Gemini model name
-        max_output_tokens: Maximum tokens to generate
-        rate_limit_delay: Delay between requests (seconds)
-        show_progress: Whether to show progress
-        max_retries: Maximum retries per item on transient errors
-        
-    Returns:
-        list: List of model output strings
-        
-    Raises:
-        ValueError: If API key is not found
-        Exception: If API call fails
+    Parallel Gemini calls with bounded concurrency, retries, and JSON-only responses.
     """
     # Try to get API key from various sources
     if api_key is None:
         try:
-            # Try Colab secrets first
             from google.colab import userdata
             api_key = userdata.get('gemini_api_key')
         except ImportError:
-            # Try environment variable
             import os
             api_key = os.environ.get('GEMINI_API_KEY')
     
@@ -597,8 +565,9 @@ def run_gemini_batch(
             f"Failed to initialize Gemini client: {exc}"
         ) from exc
     
-    outs = []
-    total = len(texts)
+    prompts = [make_input(t) for t in texts]
+    outs: List[str] = [""] * len(prompts)
+    total = len(prompts)
     errors = 0
     diagnostics: List[Dict[str, Any]] = []
     # Progress handling (mirror causal/T5 style)
@@ -629,83 +598,98 @@ def run_gemini_batch(
         ]
     except Exception:
         safety_settings = None
-    
-    for i, text in enumerate(texts):
-        out = ""
+
+    def _process_one(idx: int, prompt: str) -> tuple[int, str, Optional[str]]:
+        last_error_local: Optional[str] = None
+        out_local = ""
         finish_reason = None
-        last_error: Optional[str] = None
         for attempt in range(max_retries):
             try:
-                prompt = make_input(text)
                 response = model.generate_content(
                     prompt,
                     generation_config=gen_config,
                     safety_settings=safety_settings
                 )
-                # Decode response based on finish_reason
-                # finish_reason: 1=STOP, 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
                 if hasattr(response, 'candidates') and response.candidates:
                     candidate = response.candidates[0]
                     finish_reason = getattr(candidate, 'finish_reason', None)
                     if finish_reason == 2:
-                        # MAX_TOKENS - try to keep whatever text we have
                         if hasattr(candidate, 'content') and candidate.content.parts:
-                            out = candidate.content.parts[0].text.strip()
+                            out_local = candidate.content.parts[0].text.strip()
                         else:
-                            out = ""
+                            out_local = ""
                     elif hasattr(response, 'text') and response.text:
-                        out = response.text.strip()
+                        out_local = response.text.strip()
                     else:
-                        out = ""
+                        out_local = ""
                 else:
-                    out = response.text.strip() if hasattr(response, 'text') and response.text else ""
-                # Success
+                    out_local = response.text.strip() if hasattr(response, 'text') and response.text else ""
                 break
             except Exception as exc:
-                last_error = str(exc)
-                # Transient error handling with exponential backoff + jitter
-                # Fallback to generic backoff even if exception types aren't available
+                last_error_local = str(exc)
                 base = 0.5
                 sleep_s = base * (2 ** attempt)
                 try:
-                    import random  # local import to avoid top-level dependency in constrained envs
+                    import random  # local import
                     sleep_s += random.random() * 0.2
                 except Exception:
                     pass
                 time.sleep(sleep_s)
-        if not out and last_error:
-            # Only count as error if we end up with empty output
-            errors += 1
-        outs.append(out.strip())
-        diagnostics.append({
-            "index": i,
-            "len_chars": len(text or ""),
-            "finish_reason": finish_reason,
-            "error": last_error,
-        })
-        if progress_bar is not None:
-            progress_bar.update(1)
-        elif use_simple_progress:
-            print(f"  Processing {i + 1}/{total}...", flush=True)
-        
-        # Rate limiting
         if rate_limit_delay > 0:
             time.sleep(rate_limit_delay)
+        if not out_local and last_error_local:
+            diagnostics.append({
+                "index": idx,
+                "len_chars": 0,
+                "finish_reason": finish_reason,
+                "error": last_error_local,
+            })
+        return idx, out_local.strip(), last_error_local if not out_local else None
+
+    if total > 0:
+        try:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+        except Exception:
+            # Fallback to sequential if futures unavailable
+            for i, p in enumerate(prompts):
+                idx, out, err = _process_one(i, p)
+                outs[idx] = out
+                if err:
+                    errors += 1
+                if progress_bar is not None:
+                    progress_bar.update(1)
+                elif use_simple_progress:
+                    print(f"  Processing {i + 1}/{total}...", flush=True)
+        else:
+            with ThreadPoolExecutor(max_workers=max(1, int(max_concurrency))) as executor:
+                futures = [executor.submit(_process_one, i, p) for i, p in enumerate(prompts)]
+                for fut in as_completed(futures):
+                    try:
+                        idx, out, err = fut.result()
+                        outs[idx] = out
+                        if err:
+                            errors += 1
+                    except Exception:
+                        errors += 1
+                    finally:
+                        if progress_bar is not None:
+                            progress_bar.update(1)
+                        elif use_simple_progress:
+                            done = sum(1 for f in futures if f.done())
+                            print(f"  Processing {done}/{total}...", flush=True)
     
     if progress_bar is not None:
         progress_bar.close()
-    
-    if show_progress:
-        print(f"  Completed {total}/{total} (errors: {errors})      ")
+    elif use_simple_progress:
+        print(f"  Completed {total}/{total}      ")
     
     if errors > 0:
         print(f"⚠️  Warning: {errors} errors occurred during API calls")
-        # Print a small sample of diagnostics to aid debugging without overwhelming output
         sample = [d for d in diagnostics if d.get("error")][:5]
         if sample:
             print("  Example error diagnostics (up to 5):")
             for d in sample:
-                print(f"   - idx={d['index']}, len={d['len_chars']}, error={d['error']}")
+                print(f"   - idx={d.get('index')}, error={d.get('error')}")
     
     return outs
 
