@@ -81,7 +81,9 @@ p <- ggplot(plot_data, aes(x = bin, y = mae)) +
     plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
     axis.text.x = element_text(angle = 0, hjust = 0.5),
     strip.text = element_text(size = 11, face = "bold"),
-    panel.spacing = unit(1, "lines")
+    panel.spacing = unit(1, "lines"),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
   )
 
 # Save plot

@@ -53,14 +53,13 @@ plot_data <- plot_data %>%
   mutate(
     bin = factor(bin, levels = bin_order),
     model_label = case_when(
-      model == "gemini_flash" ~ "Gemini Flash",
       model == "gpt4o_mini" ~ "GPT-4o Mini",
       model == "llama3_8b" ~ "Llama 3 8B",
       model == "mistral_7b" ~ "Mistral 7B",
       model == "mixtral_8x7b" ~ "Mixtral 8x7B"
     ),
     model_label = factor(model_label, levels = c(
-      "Gemini Flash", "GPT-4o Mini", "Llama 3 8B",
+      "GPT-4o Mini", "Llama 3 8B",
       "Mistral 7B", "Mixtral 8x7B"
     ))
   )
@@ -75,11 +74,14 @@ p <- ggplot(plot_data, aes(x = bin, y = mae)) +
     x = "Death Count Bin",
     y = "Mean Absolute Error (MAE)"
   ) +
+  theme_minimal() +
   theme(
     plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
     axis.text.x = element_text(angle = 0, hjust = 0.5),
     strip.text = element_text(size = 11, face = "bold"),
-    panel.spacing = unit(1, "lines")
+    panel.spacing = unit(1, "lines"),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
   )
 
 # Save plot
