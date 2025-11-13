@@ -67,7 +67,7 @@ plot_data <- plot_data %>%
 # Create plot
 p <- ggplot(plot_data, aes(x = level, y = fuzzy_f1)) +
   geom_col(fill = viridis(10, option = "D")[7], alpha = 0.9) +
-  facet_wrap(~ model_label, nrow = 2, ncol = 3) +
+  facet_wrap(~ model_label, nrow = 2, ncol = 2) +
   theme_minimal() +
   labs(
     title = "LLM Models: Fuzzy F1 Across Administrative Levels",

@@ -7,6 +7,7 @@ library(viridis)
 
 # Define models to include (exclude baseline GLiNER)
 models <- c(
+  "confliBERT",
   "deberta-v3",
   "muril",
   "spanbert",
@@ -53,14 +54,15 @@ plot_data <- plot_data %>%
   mutate(
     level = factor(level, levels = level_order, labels = level_labels),
     model_label = case_when(
+      model == "confliBERT" ~ "ConfliBERT",
       model == "deberta-v3" ~ "DeBERTa-v3",
       model == "muril" ~ "MuRIL",
       model == "spanbert" ~ "SpanBERT",
       model == "xlm-roberta" ~ "XLM-RoBERTa"
     ),
     model_label = factor(model_label, levels = c(
-      "DeBERTa-v3", "MuRIL", "SpanBERT",
-      "XLM-RoBERTa"
+      "ConfliBERT","DeBERTa-v3", "MuRIL", 
+      "SpanBERT", "XLM-RoBERTa"
     ))
   )
 

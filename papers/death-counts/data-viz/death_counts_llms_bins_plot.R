@@ -66,7 +66,7 @@ plot_data <- plot_data %>%
 # Create plot
 p <- ggplot(plot_data, aes(x = bin, y = mae)) +
   geom_col(fill = viridis(10, option = "D")[4], alpha = 0.9) +
-  facet_wrap(~ model_label, nrow = 2, ncol = 3) +
+  facet_wrap(~ model_label, nrow = 2, ncol = 2) +
   theme_minimal() +
   labs(
     title = "LLM Models: MAE Across Death Count Bins",
