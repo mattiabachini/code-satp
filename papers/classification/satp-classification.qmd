@@ -56,8 +56,8 @@ execute:
   echo: false
   warning: false
   message: false
-params: 
-  reps: 5000
+params:
+  reps: 100 # set to 5000 for final render
 bibliography: nlp-coding.bib
 ---
 
@@ -106,7 +106,10 @@ target_type_pred <- read_csv("results/targettype_test1_predictions.csv")
 
 # Load data for imbalance handling strategies
 imbalance_f1 <- read_csv("results/target-type_strategy_f1_long.csv")
-target_predictions <- read_csv("results/target-type_strategy_predictions.csv") 
+target_predictions <- read_csv("results/target-type_strategy_predictions.csv")
+
+# Load LLM baseline results
+llm_summary <- read_csv("results/comparison_summary.csv")
 ```
 
 # Introduction
@@ -183,6 +186,11 @@ The perpetrator task is a multi-class classification problem in which models are
 #| fig-cap: "Model Performance for 'Perpetrator' Task"
 #| fig-align: center
 
+# GPT-4.1 mini few-shot weighted F1 for perpetrator
+perp_llm_f1 <- llm_summary |>
+  filter(task == "perpetrator", model == "GPT-4.1-mini", mode == "fewshot") |>
+  pull(weighted_f1)
+
 line_chart <- model_performance_plot(
   data = perpetrator_summary,
   xvar = fraction_raw,
@@ -194,18 +202,32 @@ line_chart <- model_performance_plot(
   end = .8
 )
 
+line_chart <- line_chart + add_reference_lines(
+  ref_line(
+    y = perp_llm_f1,
+    label = "GPT-4.1 mini\n(few-shot)",
+    color = "gray40",
+    linetype = "dashed",
+    x = .3,
+    y_offset = -.07
+  )
+)
+
 f1_ci_plot <- bootstrap_multiclass_weighted_f1_plot(perpetrator_pred,
                              fraction_value = "25%",
                              title = "b. CIs at 25% Training",
                              color = "#8337A0",
-                             n_boot = params$reps)
+                             n_boot = params$reps) +
+  theme(plot.title = element_text(size = 9))
 
-combined_plot <- line_chart + f1_ci_plot + 
-  plot_layout(widths = c(2, 1)) + 
+combined_plot <- line_chart + f1_ci_plot +
+  plot_layout(widths = c(2, 1)) +
   plot_annotation(
-    #title = "Model Performance for 'Perpetrator' Task",
-    theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
-    caption = "95% confidence intervals for macro F1 scores calculated via bootstrap resampling."
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.caption = element_text(hjust = 0, size = 8)
+    ),
+    caption = "Dashed line in plot (a) shows GPT-4.1 mini few-shot baseline. \n 95% confidence intervals for macro F1 scores in plot (b) calculated via bootstrap resampling."
   )
 
 combined_plot
@@ -226,6 +248,11 @@ Figure 2a presents model performance across increasing training data fractions. 
 #| fig-cap: "Model Performance for 'Action Type' Task"
 #| fig-align: left
 
+# GPT-4.1 mini few-shot micro F1 for action type
+action_llm_f1 <- llm_summary |>
+  filter(task == "action_type", model == "GPT-4.1-mini", mode == "fewshot") |>
+  pull(micro_f1)
+
 line_chart <- model_performance_plot(
   data = action_type_summary,
   xvar = fraction_raw,
@@ -237,54 +264,98 @@ line_chart <- model_performance_plot(
   end = .8
 )
 
+line_chart <- line_chart + add_reference_lines(
+  ref_line(
+    y = action_llm_f1,
+    label = "GPT-4.1 mini\n(few-shot)",
+    color = "gray40",
+    linetype = "dashed",
+    y_offset = -.11
+  )
+)
+
 f1_ci_plot <- bootstrap_multilabel_f1_plot(action_type_pred,
                              fraction_value = "25.0%",
                              title = "b. CIs at 25% Training",
                              ytitle = NULL,
                              color = "#8337A0",
-                             n_boot = params$reps)
+                             n_boot = params$reps) +
+  theme(plot.title = element_text(size = 9))
 
-combined_plot <- line_chart + f1_ci_plot + 
+combined_plot <- line_chart + f1_ci_plot +
   plot_layout(widths = c(2, 1)) +
   plot_annotation(
-    #title = "Model Performance for 'Action Type' Task",
-    theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
-    caption = "95% confidence intervals for micro F1 scores calculated via bootstrap resampling."
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.caption = element_text(hjust = 0, size = 8)
+    ),
+    caption = "Dashed line in plot (a) shows GPT-4.1 mini few-shot baseline.\n95% confidence intervals for macro F1 scores in plot (b) calculated via bootstrap resampling."
   )
 
 combined_plot
 ```
-When trained on the full dataset, all models perform well, converging to micro F1 scores in a narrow band between 0.915 (ELECTRA) and 0.939 (XLNet). The top four models—XLNet, RoBERTa, BERT, and ConfliBERT—are separated by only a few hundredths of a point, underscoring a high level of overall convergence. Once again, ConfliBERT performs strongly in low-data regimes but is closely matched or outperformed by general-purpose encoder models when more training data are available.
 
+When trained on the full dataset, all models perform well, converging to micro F1 scores in a narrow band between 0.915 (ELECTRA) and 0.939 (XLNet). The top four models—XLNet, RoBERTa, BERT, and ConfliBERT—are separated by only a few hundredths of a point, underscoring a high level of overall convergence. Once again, ConfliBERT performs strongly in low-data regimes but is closely matched or outperformed by general-purpose encoder models when more training data are available.
 
 ```{r}
 #| label: action_type_labels
-#| fig-cap: "Model Performance and Test Set Support by 'Action Type' Label"
+#| fig-cap: "Model Performance by 'Action Type' Label"
 #| fig-align: center
 
 library(patchwork)
 
+# Build LLM extra row from metrics JSON
+action_llm_metrics <- jsonlite::fromJSON(
+  "results/actiontype_gpt41mini_fewshot_metrics.json"
+)
+action_llm_row <- tibble(
+  model_label = "GPT-4.1 mini",
+  label = names(action_llm_metrics$per_label),
+  f1_score = sapply(action_llm_metrics$per_label, \(x) x[["f1-score"]])
+) |>
+  mutate(label = label |>
+    stringr::str_replace_all("_", " ") |>
+    stringr::str_to_title())
+
+action_llm_score <- tibble(
+  model_label = "GPT-4.1 mini",
+  score = action_llm_metrics$micro_f1
+)
+
 # Generate the heatmap and store the object
-heatmap <- per_label_f1_heatmap(action_type_summary)
+heatmap <- per_label_f1_heatmap(
+  action_type_summary,
+  title = "b. Model Performance",
+  extra_rows = action_llm_row,
+  extra_model_scores = action_llm_score) +
+  theme(plot.title = element_text(size = 9))
 
 # Extract the label order used in the heatmap
 label_order <- levels(heatmap$data$label)
 
 # Generate the support bar plot using the same label order
-barplot <- per_label_support_barplot(action_type_summary, label_levels = label_order) + 
-  theme(axis.text.x = element_text(size = 8))
+barplot <- per_label_support_barplot(
+  action_type_summary, 
+  title = "a. Support",
+  label_levels = label_order) + 
+  theme(axis.text.x = element_text(size = 8),
+        plot.title = element_text(size = 9)) 
 
 # Combine with patchwork
 combined_plot <- barplot + heatmap +
-  plot_layout(widths = c(1, 3)) +
+  plot_layout(widths = c(1, 2)) +
   plot_annotation(
     #title = "Model Performance and Test Set Support by 'Action Type' Label",
-    theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
-    #caption = "Barplot shows the number of samples per label in the test set. Heatmap shows the F1 score for each model and label."
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.caption = element_text(hjust = 0, size = 8)
+      ),
+    caption = "Barplot in plot (a) shows the number of samples per label in the test set. \n Heatmap in plot (b) shows the F1 score for each model and label."
   )
 
 combined_plot
 ```
+
 These headline results, however, mask important variation across action types. As shown in Figure 3, some labels (e.g., Surrender) are predicted with very high accuracy despite low support in the training set, while others (e.g., Facility/Infrastructure Attack) perform less well despite being relatively more common. This suggests that label frequency alone does not fully explain model performance. Certain labels may benefit from linguistic distinctiveness—for example, the word “surrender” appears with few synonyms or paraphrases in the source texts—while others, like infrastructure-related actions, may involve greater lexical ambiguity or more diverse expressions, making them harder to classify.
 
 ## Target Type Task
@@ -298,6 +369,11 @@ Figure 4a presents model performance across training fractions, with Figure 4b z
 #| fig-cap: "Model Performance for 'Target Type' Task"
 #| fig-align: center
 
+# GPT-4.1 mini few-shot micro F1 for target type
+target_llm_f1 <- llm_summary |>
+  filter(task == "target_type", model == "GPT-4.1-mini", mode == "fewshot") |>
+  pull(micro_f1)
+
 line_chart <- model_performance_plot(
   data = target_type_summary,
   xvar = fraction_raw,
@@ -309,18 +385,32 @@ line_chart <- model_performance_plot(
   end = .8
 )
 
+line_chart <- line_chart + add_reference_lines(
+  ref_line(
+    y = target_llm_f1,
+    label = "GPT-4.1 mini\n(few-shot)",
+    color = "gray40",
+    linetype = "dashed",
+    x = .35,
+    y_offset = -.1
+  )
+)
+
 f1_ci_plot <- bootstrap_multilabel_f1_plot(target_type_pred,
                              fraction_value = "25.0%",
                              title = "b. CIs at 25% Training",
                              color = "#8337A0",
-                             n_boot = params$reps)
+                             n_boot = params$reps) +
+  theme(plot.title = element_text(size = 9))
 
-combined_plot <- line_chart + f1_ci_plot + 
+combined_plot <- line_chart + f1_ci_plot +
   plot_layout(widths = c(2, 1)) +
   plot_annotation(
-    #title = "Model Performance for 'Target Type' Task",
-    theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
-    caption = "95% confidence intervals for micro F1 scores calculated via bootstrap resampling."
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.caption = element_text(hjust = 0, size = 8)
+    ),
+    caption = "Dashed line in plot (a) shows GPT-4.1 mini few-shot baseline.\n95% confidence intervals for macro F1 scores in plot (b) calculated via bootstrap resampling."
   )
 
 combined_plot
@@ -329,7 +419,7 @@ At full training (Figure 4a, rightmost points), model scores converge somewhat, 
 
 ```{r}
 #| label: target_type_labels
-#| fig-cap: "Model Performance and Test Set Support by 'Target Type' Label"
+#| fig-cap: "Model Performance by 'Target Type' Label"
 #| fig-align: center
 
 library(patchwork)
@@ -337,25 +427,55 @@ library(patchwork)
 # Create shorter axis labels
 short_labels = c("Maoist", "No Target", "Security", "Civilians", "Infrastructure", "Property", "Officials", "Mining Co.", "Other Group")
 
+# Build LLM extra row from metrics JSON
+target_llm_metrics <- jsonlite::fromJSON(
+  "results/targettype_gpt41mini_fewshot_metrics.json"
+)
+target_llm_row <- tibble(
+  model_label = "GPT-4.1 mini",
+  label = names(target_llm_metrics$per_label),
+  f1_score = sapply(target_llm_metrics$per_label, \(x) x[["f1-score"]])
+) |>
+  mutate(label = label |>
+    stringr::str_replace_all("_", " ") |>
+    stringr::str_to_title())
+
+target_llm_score <- tibble(
+  model_label = "GPT-4.1 mini",
+  score = target_llm_metrics$micro_f1
+)
+
 # Generate the heatmap and store the object
-heatmap <- per_label_f1_heatmap(target_type_summary) + 
-  scale_x_discrete(labels = short_labels)
+heatmap <- per_label_f1_heatmap(
+  target_type_summary, 
+  title = "b. Model Performance",
+  extra_rows = target_llm_row,
+  extra_model_scores = target_llm_score) +
+  scale_x_discrete(labels = short_labels) +
+  theme(plot.title = element_text(size = 9))
 
 # Extract the label order used in the heatmap
 label_order <- levels(heatmap$data$label) 
 
 # Generate the support bar plot using the same label order
-barplot <- per_label_support_barplot(target_type_summary, label_levels = label_order) +
+barplot <- per_label_support_barplot(
+  target_type_summary, 
+  title = "a. Support",
+  label_levels = label_order) +
   scale_x_discrete(labels = short_labels) +
-  theme(axis.text.x = element_text(size = 8))
+  theme(axis.text.x = element_text(size = 8),
+  plot.title = element_text(size = 9))
 
 # Combine with patchwork
 combined_plot <- barplot + heatmap +
-  plot_layout(widths = c(1, 3)) +
+  plot_layout(widths = c(1, 2)) +
   plot_annotation(
     #title = "Model Performance and Test Set Support by 'Action Type' Label",
-    theme = theme(plot.title = element_text(hjust = 0.5, face = "bold")),
-    #caption = "Barplot shows the number of samples per label in the test set. Heatmap shows the F1 score for each model and label."
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.caption = element_text(hjust = 0, size = 8)
+      ),
+    caption = "Barplot in plot (a) shows the number of samples per label in the test set.\nHeatmap in plot (b) shows the F1 score for each model and label."
   )
 
 combined_plot
@@ -385,6 +505,7 @@ action_scatter <- scatter_plot_speed_vs_accuracy(
   xlab(NULL) + 
   theme(
     legend.position = "none",
+    plot.title = element_text(size = 10),
     panel.border = element_rect(color = "gray80", fill = NA, linewidth = 0.5),
     panel.background = element_blank()
   ) +
@@ -406,6 +527,7 @@ target_scatter <- scatter_plot_speed_vs_accuracy(
   theme(
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
+    plot.title = element_text(size = 10),
     panel.border = element_rect(color = "gray80", fill = NA, linewidth = 0.5),
     panel.background = element_blank()
   ) +
@@ -423,7 +545,8 @@ combined_speed_plot <- (action_scatter + target_scatter) +
     legend.box.margin = margin(0, 0, 0, 0),
     legend.key.size = unit(0.4, "cm"),
     legend.text = element_text(size = 8),
-    plot.margin = margin(5, 5, 5, 5)
+    legend.title = element_text(size = 9),
+    plot.margin = margin(5, 5, 15, 5)
   )
 
 # Add title/caption (but not x-axis label)
@@ -440,7 +563,7 @@ combined_speed_plot <- combined_speed_plot +
 # Draw plot with shared x-axis label using grid
 #grid.newpage()
 grid.draw(combined_speed_plot)
-grid.text("Evaluation Samples Per Second", y = unit(0.02, "npc"), gp = gpar(fontsize = 12))
+grid.text("Evaluation Samples Per Second", y = unit(0.03, "npc"), gp = gpar(fontsize = 11))
 ```
 Among the top-performing models, RoBERTa and ConfliBERT stand out for their efficiency. At full training, both achieve micro F1 scores near the top of the range—0.870 and 0.878, respectively (on the target task)—while maintaining high evaluation speeds of 147 and 145 samples per second. BERT, while slightly less performant (0.847), operates at a comparable speed (144 samples/sec), making it a viable option where pretraining data diversity is sufficient.
 
@@ -492,7 +615,8 @@ short_labels = c("Maoist", "No Target", "Security", "Civilians", "Officials", "I
 
 # Generate the heatmap and store the object
 imbalance_strategy_heatmap(imbalance_f1) + 
-  scale_x_discrete(labels = short_labels)
+  scale_x_discrete(labels = short_labels) +
+  theme(legend.position = "right")
 ```
 
 The heatmap reveals distinct strategy profiles across the target type spectrum. Back translation augmentation emerged as the most consistently effective approach, achieving strong performance across both rare categories (Mining Company: 0.50, Non-Maoist Armed Group: 0.857). T5 augmentation demonstrated comparable effectiveness with particularly strong performance on "Government Infrastructure" (0.751) and "Private Property" (0.748) targets.
@@ -541,6 +665,40 @@ Future research should explore multiple complementary directions to further impr
 
 Finally, while this study focused on a single dataset, the challenges it raises are broadly relevant to social scientists considering the use of LLMs for classification tasks. Bespoke annotation schemes and imbalanced label distributions are common features of applied research, and this work contributes initial guidance on where LLMs are likely to be useful and where further development is needed. Our demonstration that both domain-specific pretraining (ConfliBERT) and targeted imbalance handling strategies can substantially improve performance on challenging categories provides a methodological roadmap for researchers facing similar classification challenges. The SATP dataset provides a valuable testbed for continued experimentation with these methods.
 
+
+```{=tex}
+\newpage
+```
+
+# Appendix {.unnumbered}
+
+## Decoder-Only LLM Baseline Results {.unnumbered}
+
+@tbl-llm-comparison presents the full results of zero-shot and few-shot classification using three decoder-only LLMs: GPT-4o-mini, GPT-4.1 mini, and GPT-5.2. These models were evaluated on the same test sets used for the encoder-based models. GPT-4.1 mini few-shot achieved the best overall performance among the decoder-only models and is used as the baseline reference in Figures 1–5.
+
+```{r}
+#| label: tbl-llm-comparison
+#| tbl-cap: "Decoder-Only LLM Classification Results (Zero-Shot and Few-Shot)"
+
+library(knitr)
+library(dplyr)
+
+llm_table <- llm_summary |>
+  mutate(
+    task = case_when(
+      task == "perpetrator" ~ "Perpetrator",
+      task == "action_type" ~ "Action Type",
+      task == "target_type" ~ "Target Type"
+    ),
+    mode = ifelse(mode == "zeroshot", "Zero-shot", "Few-shot"),
+    across(c(micro_f1, macro_f1, weighted_f1), \(x) round(x, 3))
+  ) |>
+  select(Task = task, Model = model, Mode = mode,
+         `Micro F1` = micro_f1, `Macro F1` = macro_f1,
+         `Weighted F1` = weighted_f1)
+
+kable(llm_table, align = "llcccc")
+```
 
 ```{=tex}
 \newpage

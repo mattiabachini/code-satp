@@ -1,0 +1,12 @@
+- expand lit review
+  - foundational BERT articles beyond ConfliBERT
+  - imbalance handling strategies
+  - synthetic data
+  - debiasing strategies
+  - major conflict coding projects beyond ConfliBERT including ACLED, UCDP GED, GDELT, ICEWS, citing their methods papers, and discussing how they handle manual versus automated coding as well as data quality and validation
+  - NLP/LLM applications in political science: Heseltine & Clemm von Hohenberg (already citing); Tereschenko et. al. (in project files but not citing); work from others at APSA panel and NYU workshop, Penn State mafia... 
+  - Discuss autocoding efforts: PETRARCH, TABARI, PLOVER/POLECAT, GDELT's CAMEO coding scheme, etc.
+  - Fetzer's papers on conflict in India
+  - LLMs in social sceinces: Steinert & Kazenwadel (2023); Pangakis et al. (2023); Heseltine & Clemm von Hohenberg (2024); Gilardi et al. (2023)
+- Compare results with decoder only models, e.g. GPT mini, Claude Haiku, etc. 
+

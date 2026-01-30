@@ -7,7 +7,10 @@ imbalance_strategy_heatmap <- function(data,
                                        title = NULL,
                                        subtitle = NULL,
                                        palette = "cividis",
-                                       strategy_labels = NULL) {
+                                       strategy_labels = NULL,
+                                       extra_rows = NULL,
+                                       palette_begin = 0.2,
+                                       palette_end = 0.95) {
   library(dplyr)
   library(tidyr)
   library(stringr)
@@ -26,6 +29,10 @@ imbalance_strategy_heatmap <- function(data,
       "augmentation_bt_tuned" = "Back Translation",
       "augmentation_t5_tuned" = "T5 Augmentation"
     )
+  }
+
+  if (!is.null(extra_rows)) {
+    data <- bind_rows(data, extra_rows)
   }
   
   # Create pivot table with strategies as rows and labels as columns
@@ -74,7 +81,7 @@ imbalance_strategy_heatmap <- function(data,
   p <- ggplot(plot_data, aes(x = .data$label, y = .data$strategy_display, fill = .data$f1_score)) +
     geom_tile(color = "gray90", linewidth = 0.5, alpha = 0.9) +
     geom_text(aes(label = sprintf("%.2f", .data$f1_score)), size = 3, color = "black") +
-    scale_fill_viridis_c(option = palette, name = "F1 Score", begin = 0.1) +
+    scale_fill_viridis_c(option = palette, name = "F1 Score", begin = palette_begin, end = palette_end) +
     labs(
       title = title,
       subtitle = subtitle,

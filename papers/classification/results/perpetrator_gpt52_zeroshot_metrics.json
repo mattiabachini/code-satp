@@ -1,0 +1,31 @@
+{
+  "micro_f1": 0.8891129032258065,
+  "macro_f1": 0.7149629564325474,
+  "weighted_f1": 0.8841988418280285,
+  "per_label": {
+    "Maoist": {
+      "precision": 0.9453441295546559,
+      "recall": 0.8998073217726397,
+      "f1-score": 0.9220138203356367,
+      "support": 519.0
+    },
+    "Security": {
+      "precision": 0.8574468085106383,
+      "recall": 0.9437939110070258,
+      "f1-score": 0.8985507246376812,
+      "support": 427.0
+    },
+    "Unknown": {
+      "precision": 0.42857142857142855,
+      "recall": 0.2608695652173913,
+      "f1-score": 0.32432432432432434,
+      "support": 46.0
+    }
+  },
+  "timing": {
+    "total_time_seconds": 41.84236526489258,
+    "time_per_item_seconds": 0.04217980369444816,
+    "throughput_items_per_second": 23.70802878183198,
+    "num_items": 992
+  }
+}

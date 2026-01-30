@@ -1,0 +1,4 @@
+Strategy,Model→Baseline Mean (km),Model→Baseline Median (km),Model→Baseline Within 10km,Model→Baseline Within 50km,Human→Baseline Mean (km),Human→Baseline Median (km),Human→Baseline Within 10km,Human→Baseline Within 50km,Model→Human Mean (km),Model→Human Median (km),Model→Human Within 10km,Model→Human Within 50km
+Strategy 1: Full Components,166.6597427186885,14.114369864737705,250,407,191.43680980916423,16.45353705870149,230,358,102.94800244888665,0.0,432,474
+Strategy 2: Village Only,193.43655591485566,34.167707967361494,124,308,186.8674729604567,38.33115074144739,112,325,43.5830226905027,0.0,482,526
+Strategy 3: Comma-Delimited,51.28376883407485,14.507285954247195,271,528,47.79592739620223,14.477345520140481,271,520,43.200991714243564,0.0,525,638

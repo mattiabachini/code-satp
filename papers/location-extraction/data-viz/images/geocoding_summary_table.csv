@@ -1,0 +1,4 @@
+Strategy,Median (km),Mean (km),Within 10 km,Within 50 km,N
+Strategy 1: Full Components,14.11,166.66,42.7%,69.6%,585
+Strategy 2: Village Only,34.17,193.44,22.9%,56.9%,541
+Strategy 3: Comma-Delimited,14.51,51.28,41.4%,80.7%,654

@@ -1,0 +1,67 @@
+{
+  "micro_f1": 0.6554756195043965,
+  "macro_f1": 0.576351767115251,
+  "weighted_f1": 0.6782214116247263,
+  "per_label": {
+    "civilians": {
+      "precision": 0.7664670658682635,
+      "recall": 0.8050314465408805,
+      "f1-score": 0.7852760736196319,
+      "support": 159.0
+    },
+    "maoist": {
+      "precision": 0.7534246575342466,
+      "recall": 0.859375,
+      "f1-score": 0.8029197080291971,
+      "support": 448.0
+    },
+    "government_officials": {
+      "precision": 0.5227272727272727,
+      "recall": 0.8679245283018868,
+      "f1-score": 0.6524822695035462,
+      "support": 53.0
+    },
+    "security": {
+      "precision": 0.2518703241895262,
+      "recall": 0.9805825242718447,
+      "f1-score": 0.4007936507936508,
+      "support": 103.0
+    },
+    "private_property": {
+      "precision": 0.4954128440366973,
+      "recall": 0.84375,
+      "f1-score": 0.6242774566473989,
+      "support": 64.0
+    },
+    "mining_company": {
+      "precision": 0.36363636363636365,
+      "recall": 0.5714285714285714,
+      "f1-score": 0.4444444444444444,
+      "support": 7.0
+    },
+    "government_infrastructure": {
+      "precision": 0.7590361445783133,
+      "recall": 0.65625,
+      "f1-score": 0.7039106145251397,
+      "support": 96.0
+    },
+    "non_maoist_armed_group": {
+      "precision": 0.24,
+      "recall": 1.0,
+      "f1-score": 0.3870967741935484,
+      "support": 6.0
+    },
+    "no_target": {
+      "precision": 0.8461538461538461,
+      "recall": 0.25,
+      "f1-score": 0.38596491228070173,
+      "support": 132.0
+    }
+  },
+  "timing": {
+    "total_time_seconds": 28.213587999343872,
+    "time_per_item_seconds": 0.028730741343527363,
+    "throughput_items_per_second": 34.805924011608774,
+    "num_items": 982
+  }
+}

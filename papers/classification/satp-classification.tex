@@ -753,7 +753,7 @@ are available.
 
 }
 
-\caption{Model Performance and Test Set Support by `Action Type' Label}
+\caption{Model Performance by `Action Type' Label}
 
 \end{figure}%
 
@@ -810,7 +810,7 @@ entities.
 
 }
 
-\caption{Model Performance and Test Set Support by `Target Type' Label}
+\caption{Model Performance by `Target Type' Label}
 
 \end{figure}%
 
@@ -1154,6 +1154,74 @@ strategies can substantially improve performance on challenging
 categories provides a methodological roadmap for researchers facing
 similar classification challenges. The SATP dataset provides a valuable
 testbed for continued experimentation with these methods.
+
+\newpage
+
+\section*{Appendix}\label{appendix}
+\addcontentsline{toc}{section}{Appendix}
+
+\subsection*{Decoder-Only LLM Baseline
+Results}\label{decoder-only-llm-baseline-results}
+\addcontentsline{toc}{subsection}{Decoder-Only LLM Baseline Results}
+
+Table~\ref{tbl-llm-comparison} presents the full results of zero-shot
+and few-shot classification using three decoder-only LLMs: GPT-4o-mini,
+GPT-4.1 mini, and GPT-5.2. These models were evaluated on the same test
+sets used for the encoder-based models. GPT-4.1 mini few-shot achieved
+the best overall performance among the decoder-only models and is used
+as the baseline reference in Figures 1--5.
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1739}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1884}}
+  >{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1594}}
+  >{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1449}}
+  >{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1449}}
+  >{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1884}}@{}}
+
+\caption{\label{tbl-llm-comparison}Decoder-Only LLM Classification
+Results (Zero-Shot and Few-Shot)}
+
+\tabularnewline
+
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Task
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Model
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+Mode
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+Micro F1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+Macro F1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+Weighted F1
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Perpetrator & GPT-4o-mini & Zero-shot & 0.819 & 0.605 & 0.811 \\
+Perpetrator & GPT-4o-mini & Few-shot & 0.829 & 0.680 & 0.837 \\
+Action Type & GPT-4o-mini & Zero-shot & 0.857 & 0.825 & 0.867 \\
+Action Type & GPT-4o-mini & Few-shot & 0.892 & 0.876 & 0.897 \\
+Target Type & GPT-4o-mini & Zero-shot & 0.541 & 0.523 & 0.589 \\
+Target Type & GPT-4o-mini & Few-shot & 0.515 & 0.508 & 0.541 \\
+Perpetrator & GPT-4.1-mini & Zero-shot & 0.880 & 0.679 & 0.872 \\
+Perpetrator & GPT-4.1-mini & Few-shot & 0.899 & 0.783 & 0.905 \\
+Action Type & GPT-4.1-mini & Zero-shot & 0.893 & 0.882 & 0.895 \\
+Action Type & GPT-4.1-mini & Few-shot & 0.896 & 0.878 & 0.898 \\
+Target Type & GPT-4.1-mini & Zero-shot & 0.655 & 0.576 & 0.678 \\
+Target Type & GPT-4.1-mini & Few-shot & 0.523 & 0.521 & 0.535 \\
+Perpetrator & GPT-5.2 & Zero-shot & 0.889 & 0.715 & 0.884 \\
+Perpetrator & GPT-5.2 & Few-shot & 0.883 & 0.759 & 0.882 \\
+Action Type & GPT-5.2 & Zero-shot & 0.893 & 0.870 & 0.898 \\
+Action Type & GPT-5.2 & Few-shot & 0.910 & 0.889 & 0.914 \\
+Target Type & GPT-5.2 & Zero-shot & 0.628 & 0.551 & 0.699 \\
+Target Type & GPT-5.2 & Few-shot & 0.627 & 0.560 & 0.653 \\
+
+\end{longtable}
 
 \newpage
 

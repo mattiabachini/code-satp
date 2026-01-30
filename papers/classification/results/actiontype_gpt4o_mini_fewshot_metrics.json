@@ -1,0 +1,55 @@
+{
+  "micro_f1": 0.8894173602853745,
+  "macro_f1": 0.872444869134102,
+  "weighted_f1": 0.8934030009326078,
+  "per_label": {
+    "armed_assault": {
+      "precision": 0.9495548961424333,
+      "recall": 0.8938547486033519,
+      "f1-score": 0.920863309352518,
+      "support": 358.0
+    },
+    "arrest": {
+      "precision": 0.9900990099009901,
+      "recall": 0.9836065573770492,
+      "f1-score": 0.9868421052631579,
+      "support": 305.0
+    },
+    "bombing": {
+      "precision": 0.883495145631068,
+      "recall": 0.7982456140350878,
+      "f1-score": 0.8387096774193549,
+      "support": 114.0
+    },
+    "infrastructure": {
+      "precision": 0.6938775510204082,
+      "recall": 0.9272727272727272,
+      "f1-score": 0.7937743190661478,
+      "support": 110.0
+    },
+    "surrender": {
+      "precision": 0.9512195121951219,
+      "recall": 1.0,
+      "f1-score": 0.975,
+      "support": 78.0
+    },
+    "seizure": {
+      "precision": 0.7078651685393258,
+      "recall": 0.8790697674418605,
+      "f1-score": 0.7842323651452282,
+      "support": 215.0
+    },
+    "abduction": {
+      "precision": 0.7368421052631579,
+      "recall": 0.8936170212765957,
+      "f1-score": 0.8076923076923077,
+      "support": 47.0
+    }
+  },
+  "timing": {
+    "total_time_seconds": 32.909987926483154,
+    "time_per_item_seconds": 0.03334345281305284,
+    "throughput_items_per_second": 29.9908952323178,
+    "num_items": 987
+  }
+}

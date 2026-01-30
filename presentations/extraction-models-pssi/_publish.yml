@@ -1,0 +1,4 @@
+- source: presentation.qmd
+  quarto-pub:
+    - id: f4413078-6a7b-49e6-8394-28d44d34625d
+      url: https://eteitelbaum.quarto.pub/pssi-presi

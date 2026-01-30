@@ -119,25 +119,17 @@ compute_example_matches <- function(predictions, ground_truths) {
     village_match = village_match,
     other_match = other_match,
     exact_match = exact_match,
-    exact_core_match = exact_core_match,
-    # Use exact match as proxy for fuzzy (could enhance with string distance)
-    fuzzy_match = exact_match,
-    fuzzy_core_match = exact_core_match
+    exact_core_match = exact_core_match
   )
 }
 
 # Aggregate per-example matches to metrics (percentage)
 aggregate_matches_to_metrics <- function(match_df) {
   tibble(
+    micro_f1 = mean(c(match_df$state_match, match_df$district_match, 
+                      match_df$village_match, match_df$other_match), na.rm = TRUE) * 100,
     exact_match = mean(match_df$exact_match, na.rm = TRUE) * 100,
-    exact_core_match = mean(match_df$exact_core_match, na.rm = TRUE) * 100,
-    fuzzy_match = mean(match_df$fuzzy_match, na.rm = TRUE) * 100,
-    fuzzy_core_match = mean(match_df$fuzzy_core_match, na.rm = TRUE) * 100,
-    # Micro F1 approximation: average of all field matches
-    micro_exact_f1 = mean(c(match_df$state_match, match_df$district_match, 
-                            match_df$village_match, match_df$other_match), na.rm = TRUE) * 100,
-    micro_fuzzy_f1 = mean(c(match_df$state_match, match_df$district_match, 
-                            match_df$village_match, match_df$other_match), na.rm = TRUE) * 100
+    exact_core_match = mean(match_df$exact_core_match, na.rm = TRUE) * 100
   )
 }
 
@@ -301,17 +293,13 @@ bootstrap_paired_differences <- function(combined_df, n = N_BOOT) {
       other_match_base = baseline_matches$other_match,
       exact_match_base = baseline_matches$exact_match,
       exact_core_match_base = baseline_matches$exact_core_match,
-      fuzzy_match_base = baseline_matches$fuzzy_match,
-      fuzzy_core_match_base = baseline_matches$fuzzy_core_match,
       
       state_match_model = model_matches$state_match,
       district_match_model = model_matches$district_match,
       village_match_model = model_matches$village_match,
       other_match_model = model_matches$other_match,
       exact_match_model = model_matches$exact_match,
-      exact_core_match_model = model_matches$exact_core_match,
-      fuzzy_match_model = model_matches$fuzzy_match,
-      fuzzy_core_match_model = model_matches$fuzzy_core_match
+      exact_core_match_model = model_matches$exact_core_match
     )
   
   cat(paste0("  Running ", n, " bootstrap iterations (fast aggregation only)...\n"))
@@ -323,58 +311,39 @@ bootstrap_paired_differences <- function(combined_df, n = N_BOOT) {
       baseline_metrics = map(splits, ~ {
         df_split <- analysis(.x)
         tibble(
+          micro_f1 = mean(c(df_split$state_match_base, df_split$district_match_base,
+                           df_split$village_match_base, df_split$other_match_base), 
+                          na.rm = TRUE) * 100,
           exact_match = mean(df_split$exact_match_base, na.rm = TRUE) * 100,
-          exact_core_match = mean(df_split$exact_core_match_base, na.rm = TRUE) * 100,
-          fuzzy_match = mean(df_split$fuzzy_match_base, na.rm = TRUE) * 100,
-          fuzzy_core_match = mean(df_split$fuzzy_core_match_base, na.rm = TRUE) * 100,
-          micro_exact_f1 = mean(c(df_split$state_match_base, df_split$district_match_base,
-                                  df_split$village_match_base, df_split$other_match_base), 
-                                na.rm = TRUE) * 100,
-          micro_fuzzy_f1 = mean(c(df_split$state_match_base, df_split$district_match_base,
-                                  df_split$village_match_base, df_split$other_match_base), 
-                                na.rm = TRUE) * 100
+          exact_core_match = mean(df_split$exact_core_match_base, na.rm = TRUE) * 100
         )
       }),
       # Aggregate model matches
       model_metrics = map(splits, ~ {
         df_split <- analysis(.x)
         tibble(
+          micro_f1 = mean(c(df_split$state_match_model, df_split$district_match_model,
+                           df_split$village_match_model, df_split$other_match_model), 
+                          na.rm = TRUE) * 100,
           exact_match = mean(df_split$exact_match_model, na.rm = TRUE) * 100,
-          exact_core_match = mean(df_split$exact_core_match_model, na.rm = TRUE) * 100,
-          fuzzy_match = mean(df_split$fuzzy_match_model, na.rm = TRUE) * 100,
-          fuzzy_core_match = mean(df_split$fuzzy_core_match_model, na.rm = TRUE) * 100,
-          micro_exact_f1 = mean(c(df_split$state_match_model, df_split$district_match_model,
-                                  df_split$village_match_model, df_split$other_match_model), 
-                                na.rm = TRUE) * 100,
-          micro_fuzzy_f1 = mean(c(df_split$state_match_model, df_split$district_match_model,
-                                  df_split$village_match_model, df_split$other_match_model), 
-                                na.rm = TRUE) * 100
+          exact_core_match = mean(df_split$exact_core_match_model, na.rm = TRUE) * 100
         )
       })
     ) |>
     # Extract metrics from nested tibbles
     mutate(
       # Baseline metrics
+      micro_f1_base = map_dbl(baseline_metrics, ~.x$micro_f1),
       exact_match_base = map_dbl(baseline_metrics, ~.x$exact_match),
       exact_core_match_base = map_dbl(baseline_metrics, ~.x$exact_core_match),
-      fuzzy_match_base = map_dbl(baseline_metrics, ~.x$fuzzy_match),
-      fuzzy_core_match_base = map_dbl(baseline_metrics, ~.x$fuzzy_core_match),
-      micro_exact_f1_base = map_dbl(baseline_metrics, ~.x$micro_exact_f1),
-      micro_fuzzy_f1_base = map_dbl(baseline_metrics, ~.x$micro_fuzzy_f1),
       # Model metrics
+      micro_f1_model = map_dbl(model_metrics, ~.x$micro_f1),
       exact_match_model = map_dbl(model_metrics, ~.x$exact_match),
       exact_core_match_model = map_dbl(model_metrics, ~.x$exact_core_match),
-      fuzzy_match_model = map_dbl(model_metrics, ~.x$fuzzy_match),
-      fuzzy_core_match_model = map_dbl(model_metrics, ~.x$fuzzy_core_match),
-      micro_exact_f1_model = map_dbl(model_metrics, ~.x$micro_exact_f1),
-      micro_fuzzy_f1_model = map_dbl(model_metrics, ~.x$micro_fuzzy_f1),
       # Compute differences (model - baseline)
-      micro_exact_f1_diff = micro_exact_f1_model - micro_exact_f1_base,
-      micro_fuzzy_f1_diff = micro_fuzzy_f1_model - micro_fuzzy_f1_base,
+      micro_f1_diff = micro_f1_model - micro_f1_base,
       exact_match_diff = exact_match_model - exact_match_base,
-      exact_core_match_diff = exact_core_match_model - exact_core_match_base,
-      fuzzy_match_diff = fuzzy_match_model - fuzzy_match_base,
-      fuzzy_core_match_diff = fuzzy_core_match_model - fuzzy_core_match_base
+      exact_core_match_diff = exact_core_match_model - exact_core_match_base
     ) |>
     # Drop the list columns
     select(-baseline_metrics, -model_metrics)
@@ -396,8 +365,7 @@ process_model_group <- function(model_names, results_dir, model_type,
   )
   
   cat(paste0("✓ Baseline: ", nrow(baseline_df), " incidents\n"))
-  cat(paste0("  micro_exact_f1 = ", round(baseline_metrics$micro_exact_f1, 2), 
-             ", micro_fuzzy_f1 = ", round(baseline_metrics$micro_fuzzy_f1, 2), "\n"))
+  cat(paste0("  micro_f1 = ", round(baseline_metrics$micro_f1, 2), "\n"))
   
   # Process each model with paired bootstrapping
   all_results_list <- map(model_names, function(model_name) {
@@ -431,27 +399,20 @@ process_model_group <- function(model_names, results_dir, model_type,
     # Compute model means from bootstrap
     model_means <- paired_bootstrap |>
       summarise(
-        micro_exact_f1 = mean(micro_exact_f1_model, na.rm = TRUE),
-        micro_fuzzy_f1 = mean(micro_fuzzy_f1_model, na.rm = TRUE),
+        micro_f1 = mean(micro_f1_model, na.rm = TRUE),
         exact_match = mean(exact_match_model, na.rm = TRUE),
-        exact_core_match = mean(exact_core_match_model, na.rm = TRUE),
-        fuzzy_match = mean(fuzzy_match_model, na.rm = TRUE),
-        fuzzy_core_match = mean(fuzzy_core_match_model, na.rm = TRUE)
+        exact_core_match = mean(exact_core_match_model, na.rm = TRUE)
       )
     
     # Compute p-values from paired bootstrap difference distribution
     p_values <- tibble(
-      micro_exact_f1_p = compute_pvalue_paired(paired_bootstrap$micro_exact_f1_diff),
-      micro_fuzzy_f1_p = compute_pvalue_paired(paired_bootstrap$micro_fuzzy_f1_diff),
+      micro_f1_p = compute_pvalue_paired(paired_bootstrap$micro_f1_diff),
       exact_match_p = compute_pvalue_paired(paired_bootstrap$exact_match_diff),
-      exact_core_match_p = compute_pvalue_paired(paired_bootstrap$exact_core_match_diff),
-      fuzzy_match_p = compute_pvalue_paired(paired_bootstrap$fuzzy_match_diff),
-      fuzzy_core_match_p = compute_pvalue_paired(paired_bootstrap$fuzzy_core_match_diff)
+      exact_core_match_p = compute_pvalue_paired(paired_bootstrap$exact_core_match_diff)
     )
     
     # Print diagnostic info
-    cat(paste0("  P-values: micro_exact_f1=", round(p_values$micro_exact_f1_p, 4),
-               ", micro_fuzzy_f1=", round(p_values$micro_fuzzy_f1_p, 4), "\n"))
+    cat(paste0("  P-values: micro_f1=", round(p_values$micro_f1_p, 4), "\n"))
     
     # Combine results
     bind_cols(
@@ -471,10 +432,9 @@ process_model_group <- function(model_names, results_dir, model_type,
     return(NULL)
   }
   
-  # Create table data
+  # Create table data with 3 metrics (no fuzzy duplicates)
   table_data <- tibble(
-    Metric = c("Micro Exact F1 ↑", "Micro Fuzzy F1 ↑", "Exact Match ↑", 
-               "Exact Core Match ↑", "Fuzzy Match ↑", "Fuzzy Core Match ↑")
+    Metric = c("Micro F1 ↑", "Exact Match ↑", "Exact Core Match ↑")
   )
   
   # Add baseline column
@@ -482,31 +442,24 @@ process_model_group <- function(model_names, results_dir, model_type,
   table_data <- table_data |>
     mutate(
       !!baseline_col_name := c(
-        baseline_metrics$micro_exact_f1,
-        baseline_metrics$micro_fuzzy_f1,
+        baseline_metrics$micro_f1,
         baseline_metrics$exact_match,
-        baseline_metrics$exact_core_match,
-        baseline_metrics$fuzzy_match,
-        baseline_metrics$fuzzy_core_match
+        baseline_metrics$exact_core_match
       )
     )
   
   # Add each model column
   for (i in seq_len(nrow(all_results))) {
     model_name <- all_results$model[i]
-    model_vals <- all_results[i, c("micro_exact_f1", "micro_fuzzy_f1", "exact_match",
-                                    "exact_core_match", "fuzzy_match", "fuzzy_core_match")]
+    model_vals <- all_results[i, c("micro_f1", "exact_match", "exact_core_match")]
     
     # Add column with values
     table_data <- table_data |>
       mutate(
         !!model_name := c(
-          model_vals$micro_exact_f1,
-          model_vals$micro_fuzzy_f1,
+          model_vals$micro_f1,
           model_vals$exact_match,
-          model_vals$exact_core_match,
-          model_vals$fuzzy_match,
-          model_vals$fuzzy_core_match
+          model_vals$exact_core_match
         )
       )
   }
@@ -534,28 +487,20 @@ process_model_group <- function(model_names, results_dir, model_type,
   # Only bold values that are significantly better than baseline (higher is better for all metrics)
   for (i in seq_len(nrow(all_results))) {
     model_name <- all_results$model[i]
-    model_vals <- all_results[i, c("micro_exact_f1", "micro_fuzzy_f1", "exact_match",
-                                    "exact_core_match", "fuzzy_match", "fuzzy_core_match")]
-    model_pvals <- all_results[i, c("micro_exact_f1_p", "micro_fuzzy_f1_p", "exact_match_p",
-                                     "exact_core_match_p", "fuzzy_match_p", "fuzzy_core_match_p")]
+    model_vals <- all_results[i, c("micro_f1", "exact_match", "exact_core_match")]
+    model_pvals <- all_results[i, c("micro_f1_p", "exact_match_p", "exact_core_match_p")]
     
     baseline_vals <- c(
-      baseline_metrics$micro_exact_f1,
-      baseline_metrics$micro_fuzzy_f1,
+      baseline_metrics$micro_f1,
       baseline_metrics$exact_match,
-      baseline_metrics$exact_core_match,
-      baseline_metrics$fuzzy_match,
-      baseline_metrics$fuzzy_core_match
+      baseline_metrics$exact_core_match
     )
     
     # Determine which rows are significant AND better (higher is better for all location metrics)
     significant_and_better <- c(
-      model_pvals$micro_exact_f1_p < ALPHA & model_vals$micro_exact_f1 > baseline_metrics$micro_exact_f1,
-      model_pvals$micro_fuzzy_f1_p < ALPHA & model_vals$micro_fuzzy_f1 > baseline_metrics$micro_fuzzy_f1,
+      model_pvals$micro_f1_p < ALPHA & model_vals$micro_f1 > baseline_metrics$micro_f1,
       model_pvals$exact_match_p < ALPHA & model_vals$exact_match > baseline_metrics$exact_match,
-      model_pvals$exact_core_match_p < ALPHA & model_vals$exact_core_match > baseline_metrics$exact_core_match,
-      model_pvals$fuzzy_match_p < ALPHA & model_vals$fuzzy_match > baseline_metrics$fuzzy_match,
-      model_pvals$fuzzy_core_match_p < ALPHA & model_vals$fuzzy_core_match > baseline_metrics$fuzzy_core_match
+      model_pvals$exact_core_match_p < ALPHA & model_vals$exact_core_match > baseline_metrics$exact_core_match
     )
     
     if (any(significant_and_better)) {
@@ -585,30 +530,18 @@ process_model_group <- function(model_names, results_dir, model_type,
   # Create comprehensive results table with baseline comparison
   results_summary <- all_results |>
     mutate(
-      baseline_micro_exact_f1 = baseline_metrics$micro_exact_f1,
-      baseline_micro_fuzzy_f1 = baseline_metrics$micro_fuzzy_f1,
+      baseline_micro_f1 = baseline_metrics$micro_f1,
       baseline_exact_match = baseline_metrics$exact_match,
       baseline_exact_core_match = baseline_metrics$exact_core_match,
-      baseline_fuzzy_match = baseline_metrics$fuzzy_match,
-      baseline_fuzzy_core_match = baseline_metrics$fuzzy_core_match,
-      micro_exact_f1_diff = micro_exact_f1 - baseline_micro_exact_f1,
-      micro_fuzzy_f1_diff = micro_fuzzy_f1 - baseline_micro_fuzzy_f1,
+      micro_f1_diff = micro_f1 - baseline_micro_f1,
       exact_match_diff = exact_match - baseline_exact_match,
       exact_core_match_diff = exact_core_match - baseline_exact_core_match,
-      fuzzy_match_diff = fuzzy_match - baseline_fuzzy_match,
-      fuzzy_core_match_diff = fuzzy_core_match - baseline_fuzzy_core_match,
-      micro_exact_f1_significant = micro_exact_f1_p < ALPHA,
-      micro_fuzzy_f1_significant = micro_fuzzy_f1_p < ALPHA,
+      micro_f1_significant = micro_f1_p < ALPHA,
       exact_match_significant = exact_match_p < ALPHA,
       exact_core_match_significant = exact_core_match_p < ALPHA,
-      fuzzy_match_significant = fuzzy_match_p < ALPHA,
-      fuzzy_core_match_significant = fuzzy_core_match_p < ALPHA,
-      micro_exact_f1_better = micro_exact_f1 > baseline_micro_exact_f1,
-      micro_fuzzy_f1_better = micro_fuzzy_f1 > baseline_micro_fuzzy_f1,
+      micro_f1_better = micro_f1 > baseline_micro_f1,
       exact_match_better = exact_match > baseline_exact_match,
-      exact_core_match_better = exact_core_match > baseline_exact_core_match,
-      fuzzy_match_better = fuzzy_match > baseline_fuzzy_match,
-      fuzzy_core_match_better = fuzzy_core_match > baseline_fuzzy_core_match
+      exact_core_match_better = exact_core_match > baseline_exact_core_match
     )
   
   write_csv(results_summary, results_csv)
