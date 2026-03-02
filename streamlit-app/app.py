@@ -5,6 +5,7 @@ import re
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+import time
 
 # Initialize session state for storing scraped data and save state
 if "scraped_data" not in st.session_state:
@@ -15,7 +16,7 @@ if "save_initiated" not in st.session_state:
     st.session_state.save_initiated = False
 
 # Scraping function
-def scrape_satp_data(base_url, years, months):
+def scrape_satp_data(base_url, years, months, delay_seconds=0.35, timeout_seconds=30):
     data = []
     month_to_number = {
         "Jan": "01", "Feb": "02", "Mar": "03",
@@ -27,7 +28,20 @@ def scrape_satp_data(base_url, years, months):
         for month in months:
             url = f"{base_url}-{month}-{year}"
             with st.spinner(f"Scraping: {url}"):
-                response = requests.get(url)
+                # Be polite: set a user-agent, apply a timeout, and pause between requests
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (compatible; satp-scraper/1.0; +https://github.com/eteitelbaum/code-satp)"
+                }
+                try:
+                    response = requests.get(url, headers=headers, timeout=timeout_seconds)
+                except requests.RequestException as e:
+                    st.warning(f"Request failed for {month} {year}: {e}")
+                    time.sleep(delay_seconds)
+                    continue
+
+                # Polite delay after each request (success or failure)
+                time.sleep(delay_seconds)
+
                 if response.status_code != 200:
                     st.warning(f"Failed to fetch data for {month} {year}: {response.status_code}")
                     continue
@@ -144,12 +158,39 @@ st.title("Scrape Incident Summaries from South Asian Terrorism Portal")
 # Base URL dropdown
 base_url = st.selectbox(
     "Select Base URL",
-    ["https://www.satp.org/terrorist-activity/india-maoistinsurgency"],
+    [
+        "https://www.satp.org/terrorist-activity/india",                 # national India timeline
+        "https://www.satp.org/terrorist-activity/india-jammukashmir",    # J&K
+        "https://www.satp.org/terrorist-activity/india-insurgencynortheast",
+        "https://www.satp.org/terrorist-activity/india-punjab",
+        "https://www.satp.org/terrorist-activity/india-maoistinsurgency",
+    ],
     index=0
 )
 
+# Optional: scrape multiple India series in one run
+scrape_all = st.checkbox("Scrape ALL India series (national + sub-conflicts)", value=False)
+
+ALL_INDIA_BASE_URLS = [
+    "https://www.satp.org/terrorist-activity/india",
+    "https://www.satp.org/terrorist-activity/india-jammukashmir",
+    "https://www.satp.org/terrorist-activity/india-insurgencynortheast",
+    "https://www.satp.org/terrorist-activity/india-punjab",
+    "https://www.satp.org/terrorist-activity/india-maoistinsurgency",
+]
+
+# Polite scraping controls
+delay_seconds = st.slider(
+    "Delay between requests (seconds)",
+    min_value=0.1,
+    max_value=2.0,
+    value=0.35,
+    step=0.05,
+    help="Adds a pause between each SATP page request to reduce load and avoid rate-limiting."
+)
+
 # Year and Month multiselect
-years = st.multiselect("Select Years", [str(year) for year in range(2017, 2025)], default=["2017", "2018"])
+years = st.multiselect("Select Years", [str(year) for year in range(2000, 2025)], default=[str(year) for year in range(2000, 2025)])
 months = st.multiselect("Select Months", ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], default=["Jan", "Feb"])
 
 # Scrape Data button
@@ -158,7 +199,22 @@ if st.button("Scrape Data"):
         st.error("Please select at least one year and one month.")
     else:
         with st.spinner("Scraping data..."):
-            scraped_data, total_incidents = scrape_satp_data(base_url, years, months)
+            base_urls = ALL_INDIA_BASE_URLS if scrape_all else [base_url]
+
+            dfs = []
+            total_incidents = 0
+
+            for b in base_urls:
+                df, n = scrape_satp_data(b, years, months, delay_seconds=delay_seconds)
+                if not df.empty:
+                    df["Series"] = b.rsplit("/", 1)[-1]
+                    # Ensure uniqueness across series
+                    df["Incident_ID"] = df["Series"] + "_" + df["Incident_Number"]
+                dfs.append(df)
+                total_incidents += n
+
+            scraped_data = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
             st.session_state.scraped_data = scraped_data
             st.session_state.total_incidents = total_incidents
         st.success(f"Total Incidents Scraped: {st.session_state.total_incidents}")
