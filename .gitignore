@@ -8,3 +8,8 @@ results.DS_Store
 literature/
 venv/
 .env
+
+# scraped and derived data
+scraped_data/
+*.csv
+*.rds
