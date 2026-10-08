@@ -84,12 +84,38 @@ print(gaps, n = Inf)
 
 # year x month grid per series, for the manual check
 monthly_counts %>%
-  mutate(year = year(month), mon = month(month, label = TRUE)) %>%
+  mutate(year = lubridate::year(month), mon = lubridate::month(month, label = TRUE)) %>%
   select(Series, year, mon, n) %>%
   pivot_wider(names_from = mon, values_from = n) %>%
   split(.$Series) %>%
   walk(~ { message("\n", .x$Series[1]); print(select(.x, -Series), n = Inf) })
 
 
+#------------------------------------------------------------------------------#
+# one row per unique incident: the same date and summary text (whitespace
+# normalized) is one incident, whichever series or file it came from. The regional
+# series are subsets of the "india" series, so series membership is kept as tags
+# (the conflict theater), not as separate rows.
+incidents <- df_merged %>%
+  mutate(
+    date = as.Date(parse_date_time(as.character(Date), orders = c("ymd", "dmy", "mdy"))),
+    incident_summary = str_squish(Incident_Summary)
+  ) %>%
+  filter(!is.na(incident_summary), incident_summary != "") %>%
+  group_by(date, incident_summary) %>%
+  summarise(
+    series     = paste(sort(unique(Series)), collapse = "|"),
+    n_series   = n_distinct(Series),
+    source_ids = paste(sort(unique(Incident_ID)), collapse = "|"),
+    .groups = "drop"
+  ) %>%
+  arrange(date) %>%
+  mutate(incident_uid = row_number(),
+         short_summary = nchar(incident_summary) < 40,
+         .before = 1)
 
+message("Rows before: ", nrow(df_merged), "; unique incidents: ", nrow(incidents),
+        "; summaries under 40 characters (flagged, kept): ", sum(incidents$short_summary))
 
+saveRDS(incidents, file.path(path, "scraped_incidents.rds"))
+write_csv(incidents, file.path(path, "scraped_incidents.csv"))  # csv for the Python models
