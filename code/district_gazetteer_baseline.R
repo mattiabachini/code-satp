@@ -85,7 +85,7 @@ match_incidents <- function(ids, txt) {
     cand <- which(same & key %in% keys$key)
     if (length(cand) == 0) next
 
-    m <- merge(data.table(r = cand, key = key[cand], nxt = nxt[cand]),
+    m <- merge(data.table(r = cand, nxt = nxt[cand])[, key := key[cand]],
                keys, by = "key", allow.cartesian = TRUE)
     m[, suffix := nxt %in% SUFFIX_WORDS]
     m <- m[!(type == "district" & nchar(key) <= SHORT_NAME_LEN & !suffix)]
