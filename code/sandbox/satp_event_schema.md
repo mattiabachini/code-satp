@@ -59,6 +59,9 @@ Derived from the action flags and `inter2` (rules below).
 |---|---|
 | `fatalities` | total deaths |
 | `injuries` | total injuries |
+| `killed_civilians`, `killed_security`, `killed_militants` | deaths by victim group (civilians include government officials and informers; militants are members of Maoist, insurgent or terrorist groups); victims of unstated group appear only in `fatalities` |
+| `injured_civilians`, `injured_security`, `injured_militants` | injuries by victim group, same groups |
+| `arrested` | people arrested or detained |
 | `n_arrests`, `n_surrenders`, `n_abducted` | counts from the text |
 
 ### Quality flags
