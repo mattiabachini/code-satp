@@ -5,12 +5,15 @@
 # DeepSeek, in non-thinking mode, to code each one in the layout of
 # sandbox/satp_event_schema.md:
 #   is_event       the text reports a specific violent act or security operation
-#                  (policy news, statements, strike calls, court cases are not events)
+#                  (policy news, threats, strike calls, court cases, investigation news about an
+#                  earlier act, accidents and bodies with no violence stated are not events)
+#   in_india       the act took place in India
 #   actions        any of armed_assault, abduction, bombing, infrastructure,
 #                  surrender, arrest, seizure (an event can have several)
 #   actor, inter1  who carried it out and its type, only when the text names them
 #   inter2         who or what was targeted
-#   fatalities, injuries
+#   fatalities, injuries, and how many of each were civilians, security forces or militants
+#   arrested       number of people arrested or detained
 #   successful     FALSE if the act was foiled, defused or failed (still a conflict event)
 #   n_incidents    separate acts in the text (more than 1 means the text should be split)
 # The ACLED-style event_type and sub_event_type are then derived from these.
@@ -19,8 +22,16 @@
 #
 # Inputs:  scraped_data/satp_event_texts.rds    (code/split_multi_incident_entries.R)
 #          environment variable DEEPSEEK_API_KEY
+#          environment variable SATP_TEST_FILE (optional): an .rds data frame with a column
+#          event_text; codes those texts instead of the full set, into the _test files below
+#          environment variable SATP_RUN_NAME (optional, with SATP_TEST_FILE): name of the output files,
+#          default test (coding_cache_test.rds); sandbox/make_analysis_set_input.R uses analysis
+#          environment variable SATP_MODEL (optional): model name, default deepseek-flash;
+#          another model writes its own cache and output files (suffix _<model>)
+#          environment variable SATP_N_LIMIT (optional): number of events to code, default 2500
 # Outputs: scraped_data/coding_cache.rds        (DeepSeek answers, so reruns cost nothing)
 #          scraped_data/satp_events_coded.rds/.csv
+#          (test run: coding_cache_test.rds and satp_events_coded_test.rds/.csv)
 # Author: Mattia Bachini
 #------------------------------------------------------------------------------#
 
@@ -39,10 +50,15 @@ loaded <- sapply(lop, function(pkg) {
 
 setwd("/Users/mattiabachini/Library/CloudStorage/Dropbox/code-satp/code")
 
-events_file <- "../scraped_data/satp_event_texts.rds"
-cache_file  <- "../scraped_data/coding_cache.rds"
-out_rds     <- "../scraped_data/satp_events_coded.rds"
-out_csv     <- "../scraped_data/satp_events_coded.csv"
+test_file   <- Sys.getenv("SATP_TEST_FILE", unset = NA)
+MODEL       <- Sys.getenv("SATP_MODEL", unset = "deepseek-flash")
+run_name    <- Sys.getenv("SATP_RUN_NAME", unset = "test")
+suffix      <- paste0(if (is.na(test_file)) "" else paste0("_", run_name),
+                      if (MODEL == "deepseek-flash") "" else paste0("_", MODEL))
+events_file <- if (is.na(test_file)) "../scraped_data/satp_event_texts.rds" else test_file
+cache_file  <- paste0("../scraped_data/coding_cache", suffix, ".rds")
+out_rds     <- paste0("../scraped_data/satp_events_coded", suffix, ".rds")
+out_csv     <- paste0("../scraped_data/satp_events_coded", suffix, ".csv")
 
 #------------------------------------------------------------------------------#
 ####                              Settings                                  ####
@@ -51,18 +67,17 @@ out_csv     <- "../scraped_data/satp_events_coded.csv"
 DRY_RUN <- FALSE
 # number of events to send to DeepSeek, drawn at random from those that need a call;
 # NA sends all of them
-N_LIMIT <- 2500
+N_LIMIT <- as.integer(Sys.getenv("SATP_N_LIMIT", unset = "2500"))
 
 # version of SYSTEM_PROMPT; raise it whenever the prompt changes. Events coded under an
 # older version are coded again.
-PROMPT_VERSION <- 3L
+PROMPT_VERSION <- 5L
 
 API_URL    <- "https://api.deepseek.com/chat/completions"
-MODEL      <- "deepseek-flash"
 BATCH_SIZE <- 50     # events per batch; the cache is saved after each batch
 N_PARALLEL <- 24     # requests running at the same time
 
-# USD per million tokens, from the DeepSeek pricing page; peak hours are 01:00-04:00 and
+# USD per million tokens of deepseek-flash, from the DeepSeek pricing page; peak hours are 01:00-04:00 and
 # 06:00-10:00 UTC on weekdays and cost twice as much (Chinese public holidays are not tracked)
 PRICE_OFFPEAK <- c(hit = 0.003, miss = 0.15, out = 0.6)
 PRICE_PEAK    <- 2 * PRICE_OFFPEAK
@@ -106,7 +121,9 @@ if (DRY_RUN) stop("DRY_RUN is TRUE: set it to FALSE to call DeepSeek.")
 SYSTEM_PROMPT <- paste(
   "You code one news summary about political violence in India as a single event. Answer in json.",
   "",
-  "is_event: true only if the text reports a specific violent act or security operation that took place (an attack, clash or encounter, bombing or blast, killing, abduction or kidnapping, arson or sabotage of property or infrastructure, arrest, surrender, or seizure of weapons, cash or other strategic goods). false for non-events: policy changes, announcements by governments or militants, statements and speeches, calls for strikes or curfews, protests, talks, court and legal proceedings, analysis and background reports.",
+  "is_event: true only if the text reports a specific violent act or security operation that took place (an attack, clash or encounter, bombing or blast, killing, abduction or kidnapping, arson or sabotage of property or infrastructure, arrest, surrender, or seizure of weapons, cash or other strategic goods). A reaction or statement made right after an act that names the act with its place or date counts, because the act is reported. false for non-events: policy changes, announcements by governments or militants, statements and speeches that do not describe a specific act, threats and warnings, calls for strikes or curfews, protests and rallies, talks, court and legal proceedings, investigation findings, chargesheets, rewards, identifications and anniversaries about an act from earlier (that act belongs to its own date), analysis and background reports, a body found with no violence stated or clearly implied, accidents, judicial executions, and patrols or searches that find nothing and involve no violence.",
+  "",
+  "in_india: true if the act took place in India (including Jammu and Kashmir); false if it took place abroad (for example Afghanistan, Pakistan, Syria or Canada). If the text does not say where and nothing suggests abroad, true.",
   "",
   "actions: every action type that took place in the event, from this list; an empty list if is_event is false.",
   "- armed_assault: a broad category for an attack on people, including shootings, encounters and killings.",
@@ -121,26 +138,30 @@ SYSTEM_PROMPT <- paste(
   "",
   "target_type: who or what was targeted, only if actor_type is not null. One of \"State forces\", \"Rebel group\", \"Civilians\", \"Government\" (officials and politicians), \"Property or infrastructure\", or \"None\" (for example a surrender). If State forces are the actor and no target is stated, the target is \"Rebel group\". If the people arrested or targeted are not described as militants or insurgents (for example counterfeit currency or drug cases), or it is unclear, target_type is null.",
   "",
-  "fatalities and injuries: the number of people killed and injured as reported in the text, 0 if none.",
+  "fatalities and injuries: the number of people killed and injured in the act the text describes, 0 if none. If the text describes several acts of the same event, add them. Do not count earlier incidents mentioned as background, unconfirmed reports or rumors, or people only said to be assaulted without an injury stated. Numbers given by officials count, and so do militants or attackers reported injured by security forces.",
+  "",
+  "killed_civilians, killed_security, killed_militants, injured_civilians, injured_security, injured_militants: how many of the people killed or injured belong to each group, 0 if none. civilians: civilians, and also government officials, politicians and police informers who are not security personnel. security: members of the police, army, paramilitary or other security forces, including home guards and special police officers. militants: members of Maoist, insurgent, separatist or terrorist groups, whether they were killed by security forces or by other militants. Victims whose group the text does not say count only in fatalities or injuries, so the three killed counts add up to at most fatalities and the three injured counts to at most injuries.",
+  "",
+  "arrested: the number of people arrested, detained or taken into custody in the act the text describes, 0 if none. Arrests from an earlier act mentioned in an investigation are not counted, nor are people who surrendered.",
   "",
   "successful: false if the act was foiled, defused, aborted or failed (for example a bomb that was planted but did not go off), otherwise true.",
   "",
   "n_incidents: the number of separate acts the text describes, counting acts at different places or times as separate; 1 for a single act, 0 if is_event is false.",
   "",
-  "Answer like this: {\"is_event\": true, \"actions\": [\"armed_assault\"], \"actor\": \"CPI-Maoist\", \"actor_type\": \"Rebel group\", \"target_type\": \"State forces\", \"fatalities\": 2, \"injuries\": 0, \"successful\": true, \"n_incidents\": 1}",
+  "Answer like this: {\"is_event\": true, \"in_india\": true, \"actions\": [\"armed_assault\"], \"actor\": \"CPI-Maoist\", \"actor_type\": \"Rebel group\", \"target_type\": \"State forces\", \"fatalities\": 2, \"injuries\": 1, \"killed_civilians\": 0, \"killed_security\": 2, \"killed_militants\": 0, \"injured_civilians\": 1, \"injured_security\": 0, \"injured_militants\": 0, \"arrested\": 0, \"successful\": true, \"n_incidents\": 1}",
   sep = "\n")
 
 # one chat request per event text
 build_request <- function(text) {
   request(API_URL) %>%
     req_auth_bearer_token(Sys.getenv("DEEPSEEK_API_KEY")) %>%
-    req_body_json(list(
-      model           = MODEL,
-      temperature     = 0,
-      thinking        = list(type = "disabled"),
-      response_format = list(type = "json_object"),
-      messages        = list(list(role = "system", content = SYSTEM_PROMPT),
-                             list(role = "user",   content = text)))) %>%
+    req_body_json(c(
+      list(model           = MODEL,
+           temperature     = 0,
+           response_format = list(type = "json_object"),
+           messages        = list(list(role = "system", content = SYSTEM_PROMPT),
+                                  list(role = "user",   content = text))),
+      if (MODEL != "deepseek-chat") list(thinking = list(type = "disabled")))) %>%
     req_retry(max_tries = 4)
 }
 
@@ -177,13 +198,21 @@ read_coding <- function(answer) {
   actions <- unlist(answer$actions)
   count   <- function(x) suppressWarnings(as.integer(x %||% 0L))
   list(is_event    = answer$is_event,
+       in_india    = if (is.logical(answer$in_india) && length(answer$in_india) == 1) answer$in_india else NA,
        actions     = actions[actions %in% ACTIONS],
        actor       = answer$actor %||% NA_character_,
        actor_type  = if (isTRUE(answer$actor_type %in% ACTORS)) answer$actor_type else NA_character_,
        target_type = if (isTRUE(answer$target_type %in% TARGETS)) answer$target_type else NA_character_,
        fatalities  = count(answer$fatalities),
        injuries    = count(answer$injuries),
-       successful  = if (isTRUE(is.logical(answer$successful))) answer$successful else NA,
+       killed_civilians  = count(answer$killed_civilians),
+       killed_security   = count(answer$killed_security),
+       killed_militants  = count(answer$killed_militants),
+       injured_civilians = count(answer$injured_civilians),
+       injured_security  = count(answer$injured_security),
+       injured_militants = count(answer$injured_militants),
+       arrested    = count(answer$arrested),
+       successful = if (isTRUE(is.logical(answer$successful))) answer$successful else NA,
        n_incidents = count(answer$n_incidents))
 }
 
@@ -240,9 +269,12 @@ message("Cost this run: $", round(cost_usd(usage_total, start_time), 3),
 coded <- bind_rows(imap(cache, function(x, key) {
   if (x$status != "ok" || x$prompt < PROMPT_VERSION) return(NULL)
   with(x$coding, tibble(
-    event_key = key, is_event = is_event, actor = actor, inter1 = actor_type,
+    event_key = key, is_event = is_event, in_india = in_india, actor = actor, inter1 = actor_type,
     inter2 = target_type, fatalities = fatalities, injuries = injuries,
-    successful = successful, n_incidents = n_incidents,
+    killed_civilians = killed_civilians, killed_security = killed_security,
+    killed_militants = killed_militants, injured_civilians = injured_civilians,
+    injured_security = injured_security, injured_militants = injured_militants,
+    arrested = arrested, successful = successful, n_incidents = n_incidents,
     armed_assault  = as.integer("armed_assault"  %in% actions),
     abduction      = as.integer("abduction"      %in% actions),
     bombing        = as.integer("bombing"        %in% actions),
