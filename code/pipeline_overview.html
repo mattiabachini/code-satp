@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SATP pipeline: from scraped incidents to coded events</title>
+<style>
+  :root {
+    --bg: #fafaf8; --panel: #ffffff; --ink: #1d2320; --muted: #5d6762; --line: #d9ddd9;
+    --input: #e8f0fb; --input-line: #9db7dd;
+    --script: #fdf3dc; --script-line: #d9b45a;
+    --output: #e6f4ea; --output-line: #8dc19a;
+    --c1: #8fb4e8; --c2: #f0b27a; --c3: #9fd3a8; --grey: #d3d8d5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151a18; --panel: #1d2422; --ink: #e6ebe8; --muted: #9aa5a0; --line: #34403b;
+      --input: #1c2b40; --input-line: #3f6296;
+      --script: #3a3118; --script-line: #a08433;
+      --output: #1b3325; --output-line: #3f7a53;
+      --c1: #3f6296; --c2: #a8683a; --c3: #3f7a53; --grey: #3a4540;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 44px 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 24px; font-size: 13px; color: var(--muted); }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 3px;
+                         margin-right: 6px; vertical-align: -1px; border: 1px solid; }
+  .l-in::before { background: var(--input); border-color: var(--input-line); }
+  .l-sc::before { background: var(--script); border-color: var(--script-line); }
+  .l-out::before { background: var(--output); border-color: var(--output-line); }
+
+  /* overview flow */
+  .flow { display: grid; grid-template-columns: 1fr 28px 1.3fr 28px 1fr; align-items: stretch; }
+  .arrow { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 22px; }
+  .col { display: flex; flex-direction: column; gap: 8px; }
+  .box { border: 1px solid; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+  .box b { display: block; font-size: 13px; }
+  .box small { color: var(--muted); display: block; margin-top: 2px; }
+  .in  { background: var(--input);  border-color: var(--input-line); }
+  .out { background: var(--output); border-color: var(--output-line); }
+  .sc  { background: var(--script); border-color: var(--script-line); }
+  .sc h3 { margin: 0 0 4px; font-size: 15px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .sc p { margin: 0 0 8px; font-size: 13px; }
+  .steps { margin: 0; padding-left: 20px; font-size: 13px; }
+  .steps li { margin-bottom: 6px; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px;
+         background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  .between { text-align: center; color: var(--muted); font-size: 22px; margin: 12px 0; }
+  .between small { display: block; font-size: 12px; }
+
+  /* diagram cards */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 0 0 16px; }
+  .card h3 { margin: 0 0 2px; font-size: 16px; }
+  .card .what { margin: 0 0 8px; color: var(--muted); font-size: 13.5px; }
+  .card svg { width: 100%; height: auto; display: block; }
+  .choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; font-size: 13px; }
+  .choice div { border-radius: 6px; padding: 8px 10px; border: 1px solid var(--line); }
+  .choice .yes { background: var(--output); border-color: var(--output-line); }
+  .choice .alt { background: var(--bg); }
+  .choice b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+
+  /* svg elements */
+  .fa { fill: var(--c1); } .fb { fill: var(--c2); } .fc { fill: var(--c3); } .fg { fill: var(--grey); }
+  .st { stroke: var(--ink); stroke-width: 1.2; }
+  .thin { stroke: var(--panel); stroke-width: 1.5; }
+  .dash { fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-dasharray: 6 4; }
+  .tx { fill: var(--ink); font-size: 12px; }
+  .ts { fill: var(--muted); font-size: 11px; }
+  .tm { text-anchor: middle; } .ta { text-anchor: start; } .te { text-anchor: end; }
+  .ln { stroke: var(--muted); stroke-width: 1.5; fill: none; marker-end: url(#ah); }
+  .nf { fill: none; }
+
+  table { border-collapse: collapse; width: 100%; background: var(--panel); border: 1px solid var(--line);
+          border-radius: 8px; overflow: hidden; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--bg); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+
+  @media (max-width: 760px) {
+    .flow { grid-template-columns: 1fr; }
+    .arrow { transform: rotate(90deg); padding: 4px 0; }
+    .choice { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--muted)"/>
+    </marker>
+  </defs>
+</svg>
+
+<main>
+  <h1>SATP pipeline: from scraped incidents to coded events</h1>
+  <p class="sub">From the South Asia Terrorism Portal summaries (2000 to 2025) to one row per conflict event with an action type, actors and a 2001 district unit.
+     Scripts in <code>code/</code> and, where marked, <code>code/sandbox/</code>; files in <code>scraped_data/</code> (git-ignored). Units come from the Irrigating Peace pipeline.</p>
+
+  <div class="legend">
+    <span class="l-in">input</span><span class="l-sc">script</span><span class="l-out">output</span>
+  </div>
+
+  <h2>Overview</h2>
+  <h3 style="font-size:15px;margin:0 0 8px">scrape_data_merge.R: one row per unique SATP entry</h3>
+  <div class="flow">
+    <div class="col">
+      <div class="box in"><b>scraped_data-1, -2, -3.csv</b>239,663 rows, 2000-02-29 to 2025-12-31<small>five series: india 127,731; Northeast 49,469; J&amp;K 29,895; Maoist 29,545; Punjab 3,023</small></div>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="box sc">
+      <h3>code/scrape_data_merge.R</h3>
+      <ol class="steps">
+        <li>Binds the three files and sorts them by date.</li>
+        <li>Reports duplicated incidents (same date and summary) and IDs shared by different summaries.</li>
+        <li>Counts rows per series and month to find gaps (months with zero incidents).</li>
+        <li>One row per date and summary (whitespace normalized), whichever series or file it came from; the series it appeared in are kept as tags.</li>
+      </ol>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="col">
+      <div class="box out"><b>scraped_incidents.rds / .csv</b>127,466 entries<small>incident_uid, date, incident_summary, series, source_ids</small></div>
+      <div class="box out"><b>scraped_data.rds</b>the merged raw rows</div>
+    </div>
+  </div>
+
+  <div class="between">&darr;<small>an entry can describe several separate incidents; the next script splits it</small></div>
+
+  <h3 style="font-size:15px;margin:0 0 8px">split_multi_incident_entries.R: one row per incident</h3>
+  <div class="flow">
+    <div class="col">
+      <div class="box in"><b>scraped_incidents.rds</b>from scrape_data_merge.R</div>
+      <div class="box in"><b>DeepSeek API</b>model <code>deepseek-flash</code><small>key in the environment variable DEEPSEEK_API_KEY</small></div>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="box sc">
+      <h3>code/split_multi_incident_entries.R</h3>
+      <ol class="steps">
+        <li><b>Flag.</b> An entry with two or more sentences is flagged if it has at least 900 characters, two different written-out dates, or a cue phrase ("in another incident", "separate encounter", "a series of"). 39,804 entries (31.2%).</li>
+        <li><b>Ask DeepSeek.</b> Each flagged entry goes out as numbered sentences. DeepSeek labels every sentence as part of a main incident (a specific act at one place and time) or as context (background, earlier acts, follow-ups, statements, legal steps). It returns sentence numbers only, so event texts are the original words.</li>
+        <li><b>Attach context.</b> Each context sentence joins the main incident closest to it by position; ties go to the earlier one. An entry with no main incident stays whole.</li>
+        <li><b>Build events.</b> One row per incident, with the incident's date when the text states it. Unflagged entries become one event unchanged.</li>
+        <li>Answers are cached by entry and prompt version, so a rerun pays only for new entries; 24 requests run at once.</li>
+      </ol>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="col">
+      <div class="box out"><b>satp_event_texts.rds / .csv</b>131,029 events<small>event_uid, incident_uid, event_part, event_date, event_text, split_status, prompt_version, series</small></div>
+      <div class="box out"><b>split_cache.rds</b>DeepSeek answers</div>
+    </div>
+  </div>
+
+  <div class="between">&darr;<small>both scripts below read satp_event_texts; they do not depend on each other</small></div>
+
+  <h3 style="font-size:15px;margin:0 0 8px">classify_actions_local.py: action types with the original DistilBERT model</h3>
+  <div class="flow">
+    <div class="col">
+      <div class="box in"><b>satp_event_texts.csv</b>from split_multi_incident_entries.R</div>
+      <div class="box in"><b>action_type/distilbert_model</b>multi-label DistilBERT trained on the hand-coded Maoist events<small>weights downloaded from the Hugging Face Space</small></div>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="box sc">
+      <h3>code/classify_actions_local.py</h3>
+      <ol class="steps">
+        <li>Runs the model on every event text, texts of similar length together (Apple GPU or CPU).</li>
+        <li>Saves the probability of each of seven actions: armed assault, arrest, bombing, infrastructure, surrender, seizure, abduction.</li>
+        <li>A flag is a probability above 0.5. No API and no cost.</li>
+      </ol>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="col">
+      <div class="box out"><b>satp_events_actions_local.csv</b>131,029 events, seven probabilities<small>76.0% of events have at least one flag</small></div>
+    </div>
+  </div>
+
+  <h3 style="font-size:15px;margin:32px 0 8px">code_events_deepseek.R: coding with DeepSeek, non-thinking mode</h3>
+  <div class="flow">
+    <div class="col">
+      <div class="box in"><b>satp_event_texts.rds</b>from split_multi_incident_entries.R</div>
+      <div class="box in"><b>DeepSeek API</b>model <code>deepseek-flash</code>, thinking disabled</div>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="box sc">
+      <h3>code/code_events_deepseek.R</h3>
+      <ol class="steps">
+        <li>Sends each distinct event text with the coding rules of the SATP manual.</li>
+        <li>DeepSeek returns <code>is_event</code> (policy news, statements, strike calls and court cases are not events), the action flags, the actor and its type (State forces or Rebel group, only when the text names one), the target type, fatalities and injuries, how many of each were civilians, security forces or militants (government officials and informers count as civilians), the number of people arrested, <code>successful</code> (false for foiled or defused attempts, which still count) and <code>n_incidents</code>.</li>
+        <li>Derives the ACLED-style <code>event_type</code> and <code>sub_event_type</code> from the flags, in the priority order of the schema.</li>
+        <li>Answers are cached by a hash of the text and the prompt version (now 4); the console prints tokens and cost after every batch.</li>
+        <li>The environment variable <code>SATP_TEST_FILE</code> points the script at another file with an <code>event_text</code> column; its texts are coded into separate <code>_test</code> cache and output files.</li>
+      </ol>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="col">
+      <div class="box out"><b>satp_events_coded.rds / .csv</b>events with the coding columns<small>test run on 2,500 events (prompt version 2); full run not done</small></div>
+      <div class="box out"><b>coding_cache.rds</b>DeepSeek answers</div>
+      <div class="box out"><b>satp_events_coded_test.rds, coding_cache_test.rds</b>test run on 300 hand-coded events (prompt version 4)</div>
+    </div>
+  </div>
+
+  <h3 style="font-size:15px;margin:32px 0 8px">sandbox/check_fetzer_counts.R: DeepSeek counts against hand-coded counts</h3>
+  <div class="flow">
+    <div class="col">
+      <div class="box in"><b>deaths.csv, injuries.csv, arrests.csv</b>hand-coded counts by victim group<small>Maoist region, 2005 to 2016</small></div>
+      <div class="box in"><b>satp_events_coded_test.rds</b>from code_events_deepseek.R with <code>SATP_TEST_FILE</code></div>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="box sc">
+      <h3>code/sandbox/check_fetzer_counts.R</h3>
+      <ol class="steps">
+        <li><b>Step 1</b> (no coded test file yet): joins the three hand-coded files by text and draws 300 events, 200 with a count above zero and 100 without. Hand-coded groups map to three: civilians (civilians and government officials), security forces, militants (Maoists and other armed groups).</li>
+        <li><b>Step 2</b> (coded test file present): compares DeepSeek with the hand-coded counts, for fatalities, injuries, killed and injured by group and arrests: exact match, agreement on zero against positive, mean absolute error.</li>
+      </ol>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="col">
+      <div class="box out"><b>count_test_events.rds</b>the 300 test events with their hand-coded counts</div>
+      <div class="box out"><b>fetzer_counts_disagreements.csv</b>events where a killed group or arrests differ</div>
+    </div>
+  </div>
+
+  <h3 style="font-size:15px;margin:32px 0 8px">compare_action_models.py: DistilBERT against DeepSeek</h3>
+  <div class="flow">
+    <div class="col">
+      <div class="box in"><b>satp_events_coded.csv</b>from code_events_deepseek.R</div>
+      <div class="box in"><b>action_type/distilbert_model</b>as above</div>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="box sc">
+      <h3>code/compare_action_models.py</h3>
+      <ol class="steps">
+        <li>Runs the DistilBERT model on every event DeepSeek coded as an event.</li>
+        <li>Compares the seven flags and whether any of the four analysis actions (assault, bombing, infrastructure, abduction) occurred, overall and for the model's training scope (Maoist series, 2005 to 2016).</li>
+        <li>Lists the events where the two differ.</li>
+      </ol>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="col">
+      <div class="box out"><b>action_model_comparison.csv</b>agreement, precision and recall per action and group</div>
+      <div class="box out"><b>action_model_disagreements.csv</b>events with at least one different flag</div>
+    </div>
+  </div>
+
+  <div class="between">&darr;<small>places are matched to units using the Irrigating Peace alias table</small></div>
+
+  <h3 style="font-size:15px;margin:0 0 8px">match_event_districts.R: district units</h3>
+  <div class="flow">
+    <div class="col">
+      <div class="box in"><b>satp_event_texts.rds</b>from split_multi_incident_entries.R</div>
+      <div class="box in"><b>india_unit_aliases.rds</b>1,087 district names for 584 units<small>Irrigating Peace, process/00a</small></div>
+      <div class="box in"><b>district_aliases.csv</b>75 extra spellings and post-2001 districts</div>
+      <div class="box in"><b>satp_classification.csv</b>9,921 hand-coded incidents with districts and coordinates<small>for scoring only</small></div>
+      <div class="box in"><b>india_units_2001_gadm.rds</b>unit polygons<small>Irrigating Peace, build/00b</small></div>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="box sc">
+      <h3>code/match_event_districts.R</h3>
+      <ol class="steps">
+        <li><b>Names.</b> The text becomes words; every run of one to five words, joined without spaces, is looked up in the alias table. Longer names win.</li>
+        <li><b>Shared names</b> (Aurangabad, Bijapur) resolve when the text names exactly one of their states, otherwise by the states of the event's SATP series; a name still shared stays ambiguous.</li>
+        <li><b>Output per event.</b> The primary unit (the first "X district" mention, else the first resolved name), all units mentioned, the state mentioned. Events naming only a state keep no unit.</li>
+        <li><b>Scoring.</b> The same matching runs on the hand-coded incidents and is compared with the unit of the hand-coded district name and with the unit containing the hand-coded coordinates.</li>
+      </ol>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="col">
+      <div class="box out"><b>satp_events_units.rds / .csv</b>event_uid, unit_id, units_all, match_type, n_ambiguous, state_mentioned</div>
+      <div class="box out"><b>district_match_errors.csv</b>hand-coded incidents the matching gets wrong</div>
+    </div>
+  </div>
+
+  <div class="between">&darr;<small>the action flags, units and DeepSeek coding are joined by event_uid</small></div>
+
+  <h3 style="font-size:15px;margin:0 0 8px">sandbox/export_acled_style.R: events in the layout of ACLED</h3>
+  <div class="flow">
+    <div class="col">
+      <div class="box in"><b>satp_event_texts.rds, satp_events_actions_local.csv, satp_events_units.rds, satp_events_coded.rds</b>from the scripts above</div>
+      <div class="box in"><b>india_unit_aliases.rds</b>unit names<small>Irrigating Peace, process/00a</small></div>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="box sc">
+      <h3>code/sandbox/export_acled_style.R</h3>
+      <ol class="steps">
+        <li>One row per event: the 31 ACLED columns in ACLED's order, then the SATP columns (<code>unit_id</code>, the seven action flags, the confidence).</li>
+        <li><code>event_type</code> and <code>sub_event_type</code> come from the DistilBERT flags (probability above 0.5), first match in the order abduction, bombing, armed assault, infrastructure, arrest, seizure, surrender. Keyword rules on the text split bombing and armed assault into ACLED's sub-types. Protests and Riots do not exist in SATP.</li>
+        <li>Actors, target and fatalities come from DeepSeek where it coded the event, and are empty otherwise. Latitude and longitude stay empty: SATP events are located at district level.</li>
+        <li><code>event_confidence</code> is the highest of the seven DistilBERT probabilities.</li>
+      </ol>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="col">
+      <div class="box out"><b>satp_events_acled_style.rds / .csv</b>131,029 events<small>written to the Irrigating Peace restricted folder; its process/00x_satp_exploration.R keeps events with confidence above 0.7, and process/00g_satp_unit_year_india.R counts them by unit and year</small></div>
+    </div>
+  </div>
+
+  <div class="between">&darr;<small>two location baselines on the hand-coded incidents, for comparison with match_event_districts.R</small></div>
+
+  <h3 style="font-size:15px;margin:0 0 8px">district_gazetteer_baseline.R: GADM district names in the whole text</h3>
+  <div class="flow">
+    <div class="col">
+      <div class="box in"><b>scraped_incidents.rds</b>from scrape_data_merge.R</div>
+      <div class="box in"><b>satp_classification.csv</b>9,921 hand-coded incidents<small>for scoring only</small></div>
+      <div class="box in"><b>india_adm2.rds, district_aliases.csv</b>GADM districts with name variants, and extra spellings</div>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="box sc">
+      <h3>code/district_gazetteer_baseline.R</h3>
+      <ol class="steps">
+        <li>Looks up every run of up to four words in the district names, variants and aliases. Names of up to four letters count only when followed by "district".</li>
+        <li>A state named in the text resolves a district name shared by several states.</li>
+        <li>The primary district is the first "X district" mention, else the first unambiguous name. Scores the matching against the hand-coded district.</li>
+      </ol>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="col">
+      <div class="box out"><b>scraped_incidents_districts.rds / .csv</b>a GADM district for each incident</div>
+      <div class="box out"><b>district_baseline_errors.csv</b>hand-coded incidents it gets wrong</div>
+    </div>
+  </div>
+
+  <h3 style="font-size:15px;margin:32px 0 8px">sandbox/senna_district_crosscheck.R: the SENNA procedure of Fetzer (2020)</h3>
+  <div class="flow">
+    <div class="col">
+      <div class="box in"><b>satp_classification.csv</b>9,921 hand-coded incidents</div>
+      <div class="box in"><b>fetzer_verbs.txt</b>99 verb stems and phrases from his appendix</div>
+      <div class="box in"><b>SENNA</b>Collobert et al. (2011), compiled from the source in the Irrigating Peace sandbox<small>non-commercial research license</small></div>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="box sc">
+      <h3>code/sandbox/senna_district_crosscheck.R</h3>
+      <ol class="steps">
+        <li>Splits each summary into sentences and tags them with SENNA: verbs with their arguments, and place names (tag LOC).</li>
+        <li>A sentence is an event candidate if a verb from the list has an object (role A1), as in Fetzer's definition.</li>
+        <li>Location entities of candidate sentences are matched to districts, with the same names and aliases as the baseline. A shared name counts only if a state named in the text resolves it.</li>
+        <li>An incident's district is the first candidate sentence with a match. Scores it against the hand-coded district.</li>
+      </ol>
+    </div>
+    <div class="arrow">&rarr;</div>
+    <div class="col">
+      <div class="box out"><b>senna_labeled_sentences.rds</b>one row per sentence: conflict verb with an object, location entities<small>delete the file to run SENNA again</small></div>
+      <div class="box out"><b>senna_district_errors.csv</b>incidents with a wrong district</div>
+    </div>
+  </div>
+
+  <div class="between">&darr;<small>counts by unit and year belong to the Irrigating Peace pipeline</small></div>
+
+  <h2>How each step works</h2>
+
+  <!-- 1 splitting -->
+  <div class="card">
+    <h3>1. An entry becomes one event per main incident</h3>
+    <p class="what">Context sentences stay with the main incident nearest to them. Illustrative entry of five sentences.</p>
+    <svg viewBox="0 0 640 200" role="img" aria-label="Five sentences: sentences 1 and 2 are main incident A, sentence 3 is context, sentences 4 and 5 are main incident B; sentence 3 joins incident A, giving two events">
+      <text class="ts ta" x="20" y="14">Labels from DeepSeek</text>
+      <rect class="fa st" x="20" y="22" width="90" height="38"/><text class="tx tm" x="65" y="45">sentence 1</text>
+      <rect class="fa st" x="120" y="22" width="90" height="38"/><text class="tx tm" x="165" y="45">sentence 2</text>
+      <rect class="fg st" x="220" y="22" width="90" height="38"/><text class="tx tm" x="265" y="45">sentence 3</text>
+      <rect class="fb st" x="320" y="22" width="90" height="38"/><text class="tx tm" x="365" y="45">sentence 4</text>
+      <rect class="fb st" x="420" y="22" width="90" height="38"/><text class="tx tm" x="465" y="45">sentence 5</text>
+      <text class="ts tm" x="115" y="76">main incident A</text>
+      <text class="ts tm" x="265" y="76">context</text>
+      <text class="ts tm" x="415" y="76">main incident B</text>
+      <text class="ts ta" x="20" y="108">Attach context: sentence 3 is as close to A as to B, so it joins the earlier incident</text>
+      <path class="ln" d="M265 82 L265 120"/>
+      <rect class="fa st" x="20" y="130" width="190" height="38"/><text class="tx tm" x="115" y="153">sentences 1 and 2</text>
+      <rect class="fg st" x="220" y="130" width="90" height="38"/><text class="tx tm" x="265" y="153">sentence 3</text>
+      <path class="dash" d="M15 124 L316 124 L316 174 L15 174 Z"/>
+      <rect class="fb st" x="320" y="130" width="190" height="38"/><text class="tx tm" x="415" y="153">sentences 4 and 5</text>
+      <path class="dash" d="M316 124 L516 124 L516 174 L316 174 Z"/>
+      <text class="tx tm" x="165" y="192">event 1</text>
+      <text class="tx tm" x="416" y="192">event 2</text>
+    </svg>
+    <div class="choice">
+      <div class="yes"><b>Chosen</b>DeepSeek labels sentences and returns numbers, so every event text is a set of the original sentences, and wrong answers (a missing or repeated sentence) are caught and kept as one event.</div>
+      <div class="alt"><b>Alternative considered</b>Asking DeepSeek to write each incident's text. It can reword, drop or invent details, and nothing checks it against the entry.</div>
+    </div>
+  </div>
+
+  <!-- 2 event filter -->
+  <div class="card">
+    <h3>2. The old model's confidence decides which events DeepSeek must check</h3>
+    <p class="what">About a third of entries are not violent acts (speeches, policy, court rulings), and the old model has no "not an event" answer. Its top probability separates the clear cases; the middle goes to DeepSeek. Shares of all 131,029 events; sample of 2,497 events DeepSeek coded.</p>
+    <svg viewBox="0 0 640 130" role="img" aria-label="Top probability from 0 to 1: up to 0.3 reject, 0.3 to 0.9 ask DeepSeek, above 0.9 accept">
+      <rect class="fg st" x="20" y="30" width="200" height="44"/>
+      <text class="tx tm" x="120" y="50">reject</text><text class="ts tm" x="120" y="65">15% of events</text>
+      <rect class="fb st" x="220" y="30" width="360" height="44"/>
+      <text class="tx tm" x="400" y="50">ask DeepSeek if it is an event</text><text class="ts tm" x="400" y="65">36% of events, about 48,000</text>
+      <rect class="fc st" x="580" y="30" width="40" height="44"/>
+      <text class="ts tm" x="600" y="92">accept</text><text class="ts tm" x="600" y="105">49%</text>
+      <text class="ts tm" x="20" y="22">0</text><text class="ts tm" x="220" y="22">0.3</text><text class="ts tm" x="580" y="22">0.9</text><text class="ts tm" x="620" y="22">1</text>
+      <text class="ts ta" x="20" y="92">top probability of the seven actions</text>
+      <text class="ts ta" x="20" y="108">in the sample: below 0.3, 337 of 347 are not events; above 0.9, 94% are events</text>
+    </svg>
+    <div class="choice">
+      <div class="yes"><b>Planned</b>Accept above 0.9, reject at 0.3 or below, and send the middle zone to code_events_deepseek.R, which also returns actors, targets and counts for those events.</div>
+      <div class="alt"><b>Alternative considered</b>"At least one flag" as the event indicator: it keeps 98% of DeepSeek's events but also 33% of its non-events.</div>
+    </div>
+  </div>
+
+  <!-- 3 place matching -->
+  <div class="card">
+    <h3>3. A place name in the text becomes a unit</h3>
+    <p class="what">Longest names are claimed first; a name shared by districts in several states is resolved in a fixed order.</p>
+    <svg viewBox="0 0 640 170" role="img" aria-label="Text to words to phrases to alias lookup to one unit, state mentioned, series preference, or ambiguous">
+      <rect class="fg st" x="10" y="52" width="92" height="44"/>
+      <text class="tx tm" x="56" y="71">Event text</text><text class="ts tm" x="56" y="85">"Imphal West District"</text>
+      <path class="ln" d="M102 74 L128 74"/>
+      <rect class="fa st" x="128" y="52" width="92" height="44"/>
+      <text class="tx tm" x="174" y="71">Words</text><text class="ts tm" x="174" y="85">imphal west district</text>
+      <path class="ln" d="M220 74 L246 74"/>
+      <rect class="fa st" x="246" y="52" width="104" height="44"/>
+      <text class="tx tm" x="298" y="71">Phrases, 1 to 5 words</text><text class="ts tm" x="298" y="85">"imphalwest"</text>
+      <path class="ln" d="M350 74 L376 74"/>
+      <rect class="fa st" x="376" y="52" width="104" height="44"/>
+      <text class="tx tm" x="428" y="71">Alias table</text><text class="ts tm" x="428" y="85">name to unit(s)</text>
+      <path class="ln" d="M480 66 L510 66 L510 22 L536 22"/>
+      <path class="ln" d="M480 74 L510 74 L510 62 L536 62"/>
+      <path class="ln" d="M480 82 L510 82 L510 102 L536 102"/>
+      <path class="ln" d="M480 90 L510 90 L510 142 L536 142"/>
+      <rect class="fc st" x="536" y="8" width="98" height="28"/><text class="tx tm" x="585" y="26">one unit</text>
+      <rect class="fc st" x="536" y="48" width="98" height="28"/><text class="tx tm" x="585" y="66">state in text</text>
+      <rect class="fb st" x="536" y="88" width="98" height="28"/><text class="tx tm" x="585" y="106">series states</text>
+      <rect class="fg st" x="536" y="128" width="98" height="28"/><text class="tx tm" x="585" y="146">ambiguous</text>
+      <text class="ts ta" x="10" y="148">Names of up to 3 letters count only when followed by "district".</text>
+    </svg>
+    <div class="choice">
+      <div class="yes"><b>Chosen</b>Alias table of the Irrigating Peace pipeline: the match returns the unit directly, with 2001 boundaries, and districts created after 2001 point to their 2001 parent.</div>
+      <div class="alt"><b>Alternative considered</b>Matching GADM district names and mapping to units afterwards, which loses spellings and the post-2001 parents.</div>
+    </div>
+  </div>
+
+  <h2>Event definition</h2>
+  <table>
+    <tr><th>Item</th><th>Rule</th></tr>
+    <tr><td>Entry</td><td>One row of <code>scraped_incidents</code>: a unique date and summary text, <code>incident_uid</code>.</td></tr>
+    <tr><td>Event</td><td>One incident of an entry: <code>event_uid</code> (a row number, renumbered whenever the splitter reruns), <code>event_part</code> within its entry, <code>event_text</code> made of the entry's original sentences.</td></tr>
+    <tr><td>Event vs non-event</td><td>An event is a specific violent act or security operation that took place; announcements, speeches, strike calls and court proceedings are not (SATP coding manual).</td></tr>
+    <tr><td>Actions</td><td>Armed assault, abduction, bombing, infrastructure, surrender, arrest, seizure; an event can have several. A planted device that is found or fails to go off still counts as a bombing.</td></tr>
+    <tr><td>Actor</td><td>Coded only when the text identifies one: State forces or Rebel group (including unidentified militants); empty otherwise.</td></tr>
+    <tr><td>Casualties and arrests</td><td>Fatalities and injuries as reported in the text, and how many of each were civilians (including government officials and informers), security forces or militants; victims whose group the text does not state count only in the total. Arrested: people arrested or detained, not those who surrendered.</td></tr>
+    <tr><td>Unit</td><td>2001 census district (<code>unit_id</code>, 584 units) from the Irrigating Peace pipeline.</td></tr>
+  </table>
+
+  <h2>Check results: entries and events</h2>
+  <table>
+    <tr><th>Check</th><th>Result</th></tr>
+    <tr><td>Scrape</td><td>239,663 rows; the regional series repeat the india series; 127,466 unique entries</td></tr>
+    <tr><td>Flagged for splitting</td><td>39,804 entries (31.2%): long text 18,592, several dates 22,825, cue phrase 9,095 (an entry can match several)</td></tr>
+    <tr><td>Splitting result</td><td>131,029 events from 127,466 entries; not checked 87,662; single 37,048; split 6,313 events from 2,750 entries (about 2.3 each); unresolved 6</td></tr>
+    <tr><td>Quality of the splits</td><td>Reading 50 random splits: about 40 are clean, with distinct incidents; the others split off follow-up arrests, non-violent text or background. A sample of 40 long unflagged entries held no missed digest, which led to the extra cue phrases (1,713 new calls, 494 of them split)</td></tr>
+    <tr><td>First pass cost</td><td>38,091 requests, 17.3 million tokens, $2.64 (earlier prompt and non-thinking calls)</td></tr>
+    <tr><td>Model and prompt</td><td><code>deepseek-flash</code> with thinking on (the default); prompt version 3; entries that earlier versions judged to be one incident are not asked again</td></tr>
+  </table>
+
+  <h2>Check results: action types</h2>
+  <table>
+    <tr><th>Check</th><th>Result</th></tr>
+    <tr><td>Local model, share of events with each flag</td><td>At least one 76.0%; armed assault 29.5%, arrest 26.7%, seizure 22.7%, bombing 7.6%, infrastructure 2.5%, surrender 3.2%, abduction 3.2%</td></tr>
+    <tr><td>DeepSeek test, 2,500 events (prompt version 2)</td><td>1,681 of 2,502 are events (67.2%); 53% of events involve one of the four analysis actions; 237 events have no actor type; 137 events have more than one incident; $0.195 ($0.078 per 1,000), 2.1 minutes</td></tr>
+    <tr><td>DistilBERT against DeepSeek, 1,681 events</td><td>Agreement per action 94% to 99.5%; all seven flags match in 86%; any of the four analysis actions matches in 95% (897 against 903); similar inside and outside the model's training scope</td></tr>
+    <tr><td>Main disagreements</td><td>Planted or found explosive devices: the model says bombing, DeepSeek said seizure (the version 3 prompt now codes them as bombing); DeepSeek adds infrastructure to attacks on buildings, rail tracks and towers more often than the model; DeepSeek flags abduction more often, including rescues of earlier abductions</td></tr>
+    <tr><td>DistilBERT as an event filter</td><td>Flags 98.3% of DeepSeek's events and 33.4% of its non-events; above 0.9 top probability 94% are events; between 0.3 and 0.9 the model cannot tell</td></tr>
+    <tr><td>Prompt version 4 of code_events_deepseek.R: test on 300 hand-coded events</td><td>200 events with at least one hand-coded count above zero and 100 without. All 300 coded, no failures; 99.3% are events; 21 texts hold more than one incident; $0.039 ($0.13 per 1,000 events), 329,599 input tokens (250,880 cached) and 44,151 output tokens. The full corpus texts average 538 characters against 293 in the test, so the cost per 1,000 events is higher there (an estimate of about $0.15).</td></tr>
+    <tr><td>DeepSeek counts against the hand-coded counts</td><td>Exact match over all 300: 97% to 100% for every count. Among events where the hand-coded count is above zero: fatalities 99% (86 events), arrested 98% (99), killed security forces 94% (17), killed civilians 94% (46), killed militants 79% (28), injured civilians 71% (7); every count is within one of the hand-coded count except injured civilians (86%). The injury groups have few events.</td></tr>
+    <tr><td>Main count disagreements</td><td>Victims such as supporters or leaders of a rival party and Salwa Judum activists killed by Maoists are hand-coded as militants and coded as civilians by DeepSeek (5 of the 8 disagreements read); a seizure text with a hand-coded arrest that the text does not mention; a protest against an arrest where DeepSeek found no arrest. The test covers the Maoist region only.</td></tr>
+  </table>
+
+  <h2>Check results: location</h2>
+  <table>
+    <tr><th>Check</th><th>Result</th></tr>
+    <tr><td>Hand-coded incidents</td><td>9,921; the unit of the hand-coded district name is found for 9,752 and the unit of the coordinates for 7,275 (the longitude and latitude columns of the file are swapped)</td></tr>
+    <tr><td>Scores against the district name</td><td>Coverage 95.3%, precision 96.4%, accuracy 91.9%; 793 errors: 462 with no unit found, 331 with the wrong unit (109 of them in another state)</td></tr>
+    <tr><td>Scores against the coordinates</td><td>Coverage 94.0%, precision 80.6%, accuracy 75.7%; the two references agree on 83.3% of incidents, which caps this score</td></tr>
+    <tr><td>All 131,029 events</td><td>73.9% get a unit, 14.1% name only a state, 0.2% have an ambiguous name; the rest name no place</td></tr>
+    <tr><td>Main misses</td><td>West Midnapore (109 of the 462), written "Midnapore West" in the text; texts that name only villages, police stations or "the District" (Salboni, Lalgarh, Gangaloor); wrong units mostly come from a neighboring or origin district named first ("Pakur District SP ... in Dumka District", "cadres of Narayanpur District arrested in Surat")</td></tr>
+    <tr><td>Gazetteer baseline, same 9,921 incidents</td><td>Coverage 88.2%, precision 94.7%, accuracy 83.6%; the true district is in the gazetteer for 97.8% (accuracy 85.5% among those); 7.5% of incidents name an ambiguous district. On all scraped incidents 69.3% get a district: Maoist series 81.4%, Jammu and Kashmir 77.5%, Northeast 65.7%, Punjab 69.4%. The alias-based matching above scores 91.9% on the same incidents.</td></tr>
+    <tr><td>SENNA procedure of Fetzer (2020), same 9,921 incidents</td><td>87.8% of incidents hold a candidate sentence (a verb from his list with an object); coverage 55.6%, precision 92.2%, accuracy 51.3%. Matching only the location entities of candidate sentences finds fewer districts than matching names in the whole text, with no gain in precision. The candidate rule keeps 97.5% of hand-coded arrests, 93% of bombings, 90% of armed assaults, 72% of abductions and 47% of surrenders.</td></tr>
+    <tr><td>Alias table</td><td>Balangir points to two units (21-23 and 21-24), so Bolangir and Balangir stay unmatched; to be fixed in the Irrigating Peace table</td></tr>
+  </table>
+
+  <h2>Comparison with Fetzer (2020)</h2>
+  <p class="sub">Fetzer, "Can Workfare Programs Moderate Conflict? Evidence from India", builds district-year counts from SATP clippings. His replication package holds the district-year counts only, with no event-level data or classification code.</p>
+  <table>
+    <tr><th>Item</th><th>Fetzer (2020)</th><th>This pipeline</th></tr>
+    <tr><td>Source</td><td>41,347 SATP clippings, 2000 to 2014, from more than 61 English-language sources</td><td>127,466 unique SATP entries, 2000 to 2025, five series</td></tr>
+    <tr><td>Event</td><td>Any sentence with a verb from a list of 99 stems and phrases (including arrest, surrender, recover, protest), an object and a district; at most one event per sentence</td><td>One incident of an entry, kept as an event when DeepSeek codes it as one; the old model's confidence above 0.7 is the filter in the exported file</td></tr>
+    <tr><td>Categories</td><td>No event types. Casualties (killed or injured, summed), split by victim (civilians, security forces, militants); arrest events; events without casualties</td><td>Seven action flags, actor and target types; killed and injured by victim group and arrests from DeepSeek (prompt version 4)</td></tr>
+    <tr><td>Date</td><td>Publication date of the clipping</td><td>The entry's date, or the date the text states</td></tr>
+    <tr><td>Location</td><td>2001 census district, from SENNA location entities matched to a gazetteer</td><td>2001 census district (584 units), from names in the whole text</td></tr>
+    <tr><td>Size</td><td>16,021 events from 2000 to 2014 in the replication data, rising from 512 in 2000 to 1,530 in 2014</td><td>2000 to 2014, confidence above 0.7: 50,305 events with a unit, about 35,000 of them with one of the four analysis actions; the four-action count falls from 2,306 in 2000 to 1,662 in 2014</td></tr>
+    <tr><td>Outcome</td><td>District-year counts of events and of casualties in 239 districts with any killed; Poisson regressions with district and region-phase-year effects</td><td>Unit-year counts in the Irrigating Peace pipeline (process/00g_satp_unit_year_india.R)</td></tr>
+  </table>
+
+  <h2>Open steps</h2>
+  <table>
+    <tr><th>Step</th><th>Status</th></tr>
+    <tr><td>DeepSeek coding of the events the old model cannot classify (confidence 0.3 to 0.9, 47,851 events)</td><td>Filter not added to the script; full run not done</td></tr>
+    <tr><td>DeepSeek coding of casualties by victim group and arrests for the events that enter the panel</td><td>Prompt tested on 300 hand-coded events; full run not started, and which events to code is not decided. The cost is about $0.13 to $0.15 per 1,000 events.</td></tr>
+    <tr><td>District-year counts as in Fetzer: all events, casualties, casualties by victim group, arrests, events without casualties</td><td>Not started</td></tr>
+    <tr><td>Sub-district gazetteer (tehsil, block and police-station names from SHRUG) for texts that name no district</td><td>Not started</td></tr>
+    <tr><td>Merge action flags and units by <code>event_uid</code>; count events by unit and year</td><td>The merge is in sandbox/export_acled_style.R; the counts by unit and year are in the Irrigating Peace pipeline (process/00g_satp_unit_year_india.R)</td></tr>
+  </table>
+</main>
+</body>
+</html>
