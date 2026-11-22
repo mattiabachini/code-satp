@@ -13,3 +13,17 @@ venv/
 scraped_data/
 *.csv
 *.rds
+
+# OSM extracts (Geofabrik, GB-scale)
+data/raw/osm/*.pbf
+
+# GeoNames country dump
+data/raw/geonames/*.zip
+
+# OSM derived admin boundaries (large)
+data/osm_admin_boundaries_india.gpkg
+
+# SHRID polygon shapefile (large)
+data/raw/shrug/*
+!data/raw/shrug/README.md
+!data/raw/shrug/open_poly.bib
