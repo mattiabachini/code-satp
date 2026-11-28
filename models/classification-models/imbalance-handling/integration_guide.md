@@ -89,9 +89,9 @@ trainer, test_results, pred_df = train_transformer_model_with_focal_loss(
 import pandas as pd
 
 # Load your datasets
-df_perpetrator = pd.read_csv('data/perpetrator.csv')
-df_action_type = pd.read_csv('data/action_type.csv') 
-df_target_type = pd.read_csv('data/target_type.csv')
+df_perpetrator = pd.read_csv('data/intermediate/datasets/perpetrator.csv')
+df_action_type = pd.read_csv('data/intermediate/datasets/action_type.csv') 
+df_target_type = pd.read_csv('data/intermediate/datasets/target_type.csv')
 
 # Create dictionary for multi-task learning
 df_dict = {

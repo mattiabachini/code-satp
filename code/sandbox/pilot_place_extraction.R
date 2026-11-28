@@ -12,12 +12,12 @@
 #         150 Maoist, 150 J&K, 150 Northeast, 50 Punjab/other.
 #
 # Inputs:  Irrigating Peace satp_events_conf07.rds and india_shrid_unit_key.rds
-#          data/shrid_loc_names.csv, data/shrid_centroids.rds (SHRUG shrid2 polygons)
+#          data/intermediate/gazetteers/shrid_loc_names.csv, data/intermediate/gazetteers/shrid_centroids.rds (SHRUG shrid2 polygons)
 #          environment variable DEEPSEEK_API_KEY
 #          environment variable SATP_PILOT_N (optional, default 500)
-# Outputs: scraped_data/place_cache_pilot.rds      (DeepSeek answers, reruns are free)
-#          scraped_data/place_pilot_events.csv     (one row per event)
-#          scraped_data/place_pilot_places.csv     (one row per extracted place)
+# Outputs: data/intermediate/places/place_cache_pilot.rds      (DeepSeek answers, reruns are free)
+#          data/intermediate/places/place_pilot_events.csv     (one row per event)
+#          data/intermediate/places/place_pilot_places.csv     (one row per extracted place)
 # Author: Mattia Bachini
 #------------------------------------------------------------------------------#
 
@@ -38,7 +38,7 @@ setwd("/Users/mattiabachini/Library/CloudStorage/Dropbox/code-satp/code")
 ip_dir      <- "/Users/mattiabachini/Library/CloudStorage/Dropbox/irrigating_peace/mattia/data/intermediate/restricted/"
 conf07_file <- paste0(ip_dir, "satp_events_conf07.rds")
 key_file    <- paste0(ip_dir, "india_shrid_unit_key.rds")
-cache_file  <- "../scraped_data/place_cache_pilot.rds"
+cache_file  <- "../data/intermediate/places/place_cache_pilot.rds"
 
 MODEL          <- "deepseek-flash"
 PROMPT_VERSION <- 1L
@@ -72,9 +72,9 @@ sample_ev <- analysis %>%
 norm <- function(x) str_squish(str_replace_all(str_to_lower(x), "[^a-z ]", " "))
 nospace <- function(x) str_remove_all(norm(x), " ")
 
-gaz <- read_csv("../data/shrid_loc_names.csv", show_col_types = FALSE) %>%
+gaz <- read_csv("../data/intermediate/gazetteers/shrid_loc_names.csv", show_col_types = FALSE) %>%
   inner_join(distinct(readRDS(key_file), shrid2, unit_id), by = "shrid2") %>%
-  left_join(readRDS("../data/shrid_centroids.rds"), by = "shrid2")
+  left_join(readRDS("../data/intermediate/gazetteers/shrid_centroids.rds"), by = "shrid2")
 
 # place level: village or town names; sub-district level: sub-district names (centroid = mean of its places)
 gaz_place <- gaz %>%
@@ -259,5 +259,5 @@ print(places_res %>% filter(is.na(kind)) %>% count(type, sort = TRUE))
 write_csv(events_out %>% select(event_id_cnty, series, admin1, admin2, unit_id, year, llm_precision,
                                 llm_name, llm_type, llm_role, gaz_name, kind, match, n_cand, lon, lat,
                                 llm_level, rule_place, rule_sub, rule_level, agree, notes),
-          "../scraped_data/place_pilot_events.csv")
-write_csv(places_res %>% select(-key), "../scraped_data/place_pilot_places.csv")
+          "../data/intermediate/places/place_pilot_events.csv")
+write_csv(places_res %>% select(-key), "../data/intermediate/places/place_pilot_places.csv")

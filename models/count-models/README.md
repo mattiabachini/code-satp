@@ -244,7 +244,7 @@ To create notebooks for other count types (injuries, arrests, etc.):
 
 - `../classification-models/` - Action type, perpetrator, target classification
 - `../location-models/` - Location extraction models
-- `../../data/` - Source data files
+- `../../data/intermediate/datasets/` - Source data files
 
 ## Contact
 

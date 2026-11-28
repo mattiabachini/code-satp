@@ -1,0 +1,251 @@
+n	text_status	sub_event_types	conflict_class	actors (A1|SA1 // A2|SA2)	key places (name:level:role)	gap (schema change needed)
+251	N judicial_or_investigation	-	-	-	-	
+252	T	attack	conflict	CPI-Maoist // civilians	Laheritola:village:site; Bhamragarh:tehsil:site_area; Gadchiroli:district	intended target (husband) differs from victim (wife) -> add target.intended flag
+253	N judicial_or_investigation	-	-	-	-	
+254	N policy_or_administration	-	-	-	-	
+255	T	arrests (arrest_for earlier killing)	unclear	Police // civilians	Rotomi:village:site; Zunheboto:district; Karbi Anglong:district:earlier_act_site; Karagaon:village:origin	
+256	N statement_or_opinion	-	-	-	-	
+257	T	disrupted_weapons_use	conflict	CRPF|District Police // CPI-Maoist(suspected)	Aranpur-Jagargunda road:road:site; Aranpur PS:police_station:site_area; Dantewada	
+258	N diplomacy_or_foreign	-	-	-	-	
+259	T	arrests	conflict	Police // separatist leader (political)	Budgam PS:police_station:fir_registered; Srinagar:earlier_act_site	
+260	T	arrests	crime	Delhi Police Special Cell // FICN gang	Bijnore:origin; Malda:origin (supplier)	site only implied by arresting unit (Delhi Police) -> add place role/level 'inferred_from_actor_unit'
+261	T	attack	conflict	GNLA // civilians	police anti-dacoity camp:security_camp:reference; Dobu:village:site; East Garo Hills	weapon 'blunt weapon', torture -> add weapon_category blunt_or_beating
+262	T	disrupted_weapons_use	conflict	SFs // unidentified	Kamalpur:village:reference(near); Kamrup	
+263	T	attack	unclear	unidentified gunmen // civilians	Phayeng:village:site; Lamshang PS:site_area; Imphal West	
+264	N judicial_or_investigation	-	-	-	-	
+265	N other (group contesting elections)	-	-	-	-	
+266	N statement_or_opinion	-	-	-	-	
+267	T	arrests; arms_recovery	unclear	Police // PFI	under-construction building:landmark:site; Narath:locality:site; Kannur	
+268	N intelligence_or_assessment	-	-	-	-	
+269	N group_internal_affairs	-	-	-	-	
+270	T? follow_up	attack (death added to Oct 3 grenade attack)	conflict	terrorists // civilians	Soura Medical Institute:landmark:died_at; Sopore:earlier_act_site	follow-up that adds a death to an earlier act -> add status follow_up_adds_casualty + role died_at_hospital
+271	N statement_or_opinion	-	-	-	-	
+272	N statement_or_opinion	-	-	-	-	
+273	N policy_or_administration	-	-	-	-	
+274	N statistics_or_review	-	-	-	-	
+275	T	arrests; looting_property_destruction(sealing)	conflict	Jammu Police|CRPF // JeI	6 districts listed:district:site; Lawnyal Kishtwar office:landmark:site	one act spread over six districts -> add act.multi_site flag + rule (district-level only)
+276	T	armed_clash	conflict	SFs // UNLF(suspected)	Tingmun:village:reference(near); Churachandpur-Tamenglong district border:district:site_area	
+277	T	remote_explosive_landmine_ied; attack; (strike called)	conflict	NDFB // civilians ; unidentified // SF	Gauripur Mahamaya Puja pandal:landmark:site; Dhubri	
+278	T	armed_clash + looting (rifles taken)	conflict	CPI-Maoist(suspected) // Police	Amrapara:area/block:site; Pakur	one act with two sub-types -> add secondary_sub_event_type
+279	T	armed_clash	conflict	CPI-Maoist // Police	Chaandsuraj:village:site; Gondia	
+280	N statistics_or_review	-	-	-	-	
+281	T	arrests	conflict	SFs // PREPAK (former member)	Chandel:district:site	
+282	T fragment	arrests	conflict	SFs // CPI-Maoist	Kalmanar:village:site; Narayanpur	
+283	N call_or_plan	-	-	-	-	
+284	N threat_or_warning (+recalled arrests)	-	-	-	-	
+285	N policy_or_administration	-	-	-	-	
+286	N statement_or_opinion	-	-	-	-	
+287	T	armed_clash	conflict	troops // LeT	Ekipora:village:site; Mohanpora:village:reference; Kulgam:police_district:site_area	
+288	T	shelling_artillery_missile	interstate	Pakistan Army // Indian Army + civilians	Tanghdar:border_sector:site; Kupwara	
+289	T	arrests	conflict	SFs // NSCN-K	Kehoi Camp:group camp:site; Dimapur	designated ceasefire camps of groups -> add level group_designated_camp
+290	N judicial_or_investigation	-	-	-	-	
+291	T	drone_interception	unclear	BSF // -	Dauke:village:site; Amritsar	
+292	T	shelling_artillery_missile	interstate	Pakistan Army // Indian Army	Kalal:area:site; Nowshera:border_sector; Rajouri	
+293	T	arrests	conflict	Police // HNLC	Mawlai Nongkwar:locality:site; East Khasi Hills	
+294	T	abduction; hostage_released	conflict	ZUF // civilians (railway workers)	Tamenglong:district:site	
+295	N policy_or_administration	-	-	-	-	
+296	T	arrests	unclear	SFs // Bangladeshi nationals	Dhubri:district:site	
+297	T	armed_clash	conflict	SFs // LeT (foreign)	Tangpora:village:site; Baramulla	
+298	T	other (group bans a newspaper)	conflict	NDFB // newspaper	Kokrajhar:town:site?	coercive diktats/bans by groups: event or not? -> decision for Mattia
+299	N statement_or_opinion	-	-	-	-	
+300	T	armed_clash	conflict	terrorists // SOG	Chankhan Sopore:locality:site; Baramulla	
+301	T	armed_clash	conflict	Assam Police // ULFA	Bidyapur Rabhapara:village:site; Bongaigaon	
+302	T	arrests	conflict	SFs // CPI-Maoist	Lalgarh:area:site	villagers fled during operation (displacement) - no field; note only
+303	N policy_or_administration	-	-	-	-	
+304	T	hideout_or_camp_busted; arms_recovery	conflict	SFs // -	Kamad-Dialgam:village:site; Anantnag	
+305	T	arrests (came to collect extortion)	conflict	Police // JSJM	Patratu:town:site; Ramgarh	
+306	T	peaceful_protest (Kuki Black Day)	conflict	Kuki community|Kuki Inpi // -	Brig Thomas Ground:landmark:site; Kangpokpi:area; Senapati	
+307	T	attack (axe; victim had surrendered)	conflict	CPI-Maoist // civilians (former member)	Kehakavi:village:site; Dhanora:tehsil:site_area; Gadchiroli	
+308	N threat_or_warning (dress-code diktat)	-	-	-	-	
+309	T fragment	arrests	conflict	TSR // collaborator, unspecified outfit	Manik Chowdhury Para:village:site; Champahawor PS:site_area	
+310	N statement_or_opinion	-	-	-	-	
+311	T	arrests	conflict	Gadchiroli Police|Chhattisgarh Police // CPI-Maoist	Sandra:village:reference(near); Gadchiroli	
+312	T	arrests (extortionist)	conflict	Police // NSCN-R	Durga Mandir area:landmark:site; Dimapur	
+313	T follow_up	search for bodies after Sep 27 gunbattle	conflict	SFs // CPI-Maoist	Jhumra hills:hill:site; Gomia:block; Bokaro	
+314	T	arrests	conflict	SFs // KLA	Thangmeiband Selungba Leikai:locality:site; Imphal West	
+315	T	armed_clash x2 (Feb 12 camp attack; Feb 13 search)	conflict	JeM fidayeen // SFs	Safpora:village:site; Baba-Wuyal:area:site; Baramulla	
+316	T	arrests; arms handed over	conflict	SFs // MULTA	Kachuwa Gadhara:area:site; Nagaon	
+317	T	armed_clash	interstate	Pakistan Army // Indian Army	Sunderbani:border_sector:site; Rajouri	
+318	T	other (NIA raids, documents seized)	conflict	NIA // CNF (Myanmar group)	Aizawl, Champhai, Kolasib:district:site; Zawnling, Tipa PS:earlier_act_site	
+319	T	attack	conflict	CPI-Maoist // civilians (part-time govt employees)	Bandhgora:village:body_found; Jhargram:town:reference; Lalgarh:area; Paschim Medinipur	
+320	T	arrests; hideout_or_camp_busted	conflict	Police // CPI-Maoist	Kuakonda:block:site; Dantewada	
+321	T	extortion_demand (phone call)	conflict	JJMP // stone crushing plant	Asehar:village:site; Panki PS:site_area; '20 km from Panki PS, 33 km from Daltonganj':distance; Palamu	
+322	T	other (opium crop destroyed)	crime	Jharkhand Police // -	Jobang Uldag:village:site; Lohardaga	
+323	T	grenade (did not explode)	conflict	MNPF(suspected) // contractor	Koirengei:area:site; Heingang PS:responding; Imphal West	failed attack -> add act.attempt_failed flag; PS that responds = add role responding_ps (good proxy for jurisdiction)
+324	N talks_or_negotiation_news	-	-	-	-	
+325	T	arrests	conflict	SFs // NDFB-ATF	Junction of Tekang - Tizit River:river:site; Majunli, Udalguri:origin	no district or state in text; local paper (Nagaland Post) points to Nagaland -> newspaper check useful
+326	N diplomacy_or_foreign	-	-	-	-	
+327	N statement_or_opinion (group denies extortion)	-	-	-	-	
+328	T	armed_clash	interstate	Pakistan Army // Indian Army	Farkian Gali:border pass:site; Balbir Post:security_post:site; Keran:border_sector; Kupwara	
+329	T follow_up	identification of 7 killed on Jan 28	conflict	- // poll personnel, CRPF, NSCN-IM cadre	Chandel:district	
+330	T	hostage_released	conflict	ANLA(suspected) // tea estate manager	Tyroon Tea Estate:landmark:origin; Jorhat:district:earlier_act_site	
+331	T	armed_clash; hideout_or_camp_busted	conflict	CPI-Maoist // Hawk Force	Debarveli Police post:police outpost:site_area; Balaghat	police outposts/posts below police stations -> add level police_outpost
+332	T fragment	armed_clash	conflict	SFs // KRF	Diphu:town:site; Karbi Anglong	
+333	T	armed_clash	conflict	SFs // Al-Badr + LeT + TJI + HM	Fidarpora:village:site; Rafiabad:area; Baramulla	
+334	T	shelling_artillery_missile	interstate	Pakistan Army // Indian Army	Balakote, Mendhar:border_sector:site; Poonch	
+335	T fragment	arrests; arms_recovery	conflict	SFs // -	Bemina:locality:site; Srinagar	
+336	T	hostage_released (rescue); disrupted_weapons_use	conflict	SFs // LeT(suspected)	Champal:area:earlier_act_site; Dhadki forests:forest:site; Doda | hospital premises:landmark:site; Srinagar	
+337	N statement_or_opinion	-	-	-	-	
+338	T	arrests	conflict	Police // ULFA conduits	South Sarania:locality:site; Guwahati	
+339	N statement_or_opinion	-	-	-	-	
+340	T	remote_explosive_landmine_ied	unclear	unidentified // civilians	DM College:landmark:reference(outside); Thangmeiband:locality:site; Imphal West	
+341	T	disrupted_weapons_use	conflict	AR|Ukhrul Police BDS // -	Ukhrul:town:site	
+342	N other (multi-day operation summary)	-	-	-	-	multi-day operation summaries without a dated act -> add no_act_reason operation_summary
+343	T	peaceful_protest (sit-in, shutdown)	conflict	doctors|RIMS // -	RIMS:landmark:site; Ngakraba Leirak:locality:earlier_act_site; Imphal	
+344	N diplomacy_or_foreign	-	-	-	-	
+345	T	arrests (kidnap bid foiled)	conflict	Diphu Police // KPLT	Diphu:town:site (several locations)	
+346	T	armed_clash (ambush)	conflict	terrorists // BSF	Kumbi Pukhri Mapal:village:site; Churachandpur	
+347	T fragment	drone_interception	unclear	BSF // -	Kasyam Barman BoP:border_post:site; Pathankot	
+348	T	disrupted_weapons_use (grenade found at residence)	unclear	- // institute director	residence compound:landmark:site; Imphal	
+349	T	armed_clash	conflict	SFs // LeT	Kot Chadwal:village:site; Rajouri	
+350	T	arrests; disrupted_weapons_use	conflict	Army // ULFA 709 bn	Kukshi:village:origin?; Fakiragram PS:police_station; Kokrajhar	'cadre of Kukshi village' with no other site: origin or site? -> rule: origin used as fallback site, flagged
+351	N policy_or_administration	-	-	-	-	
+352	T	grenade x2	conflict	terrorists // SF pickets	Kathi Darwaza:locality:site; Srinagar | Pahalgam:town:site	
+353	N statement_or_opinion	-	-	-	-	
+354	N policy_or_administration (+recalled blast)	-	-	-	-	
+355	T	arrests (inside an investigation story)	conflict	CID // IS-linked helpers	Labhpur PS:destination; Howrah court:court_or_custody; Birbhum	
+356	N diplomacy_or_foreign	-	-	-	-	
+357	N threat_or_warning (alert)	-	-	-	-	
+358	T	arrests	conflict	Tinsukia Police // ULFA linkman	ATC Mall:landmark:reference; Tinsukia:town:site; Dighalhakhu, Barekuri PS:origin	
+359	T	arrests (arrest_for Jan 24 grenade attack)	conflict	Assam Police // surrendered ULFA cadre	'unspecified place':site unknown; Ganeshguri, Guwahati:earlier_act_site	
+360	T	arrests	crime	Police // FICN carriers	Bahadurganj PS:site_area; Kishanganj	
+361	N judicial_or_investigation	-	-	-	-	
+362	T	arrests x2	conflict	Army // ULFA finance wing	Borpathar:village:site; Tinsukia; Laopani, Dhola, Talap, Lohit river islands:activity_area	
+363	T	arrests x2	conflict	SFs // Islamic Front	Mokhey, Ramgarh:village:site; 'Jammu':region-or-district	'In Jammu' is a division or a district -> resolution rule, not a field
+364	N diplomacy_or_foreign	-	-	-	-	
+365	N statistics_or_review	-	-	-	-	
+366	N judicial_or_investigation	-	-	-	-	
+367	T	agreement (BTC accord)	conflict	GoI|Assam Govt // BLT	New Delhi:city:site	are agreements events? -> decision (keep as strategic development, outside violence set)
+368	T	remote_explosive_landmine_ied	conflict	CPI-Maoist // CRPF	Banko Forest:forest:site; K Balang PS:site_area; Rourkela:reference; Sundargarh; Odisha-Jharkhand border; West Singhbhum:posting_or_base	
+369	T	remote_explosive_landmine_ied	conflict	CPI-Maoist // Chhattisgarh Police	Sendhawadi:village:reference(near); Rajnandgaon	
+370	N statement_or_opinion	-	-	-	-	
+371	T	armed_clash x2	conflict	SFs // unidentified terrorists	Dudkalan forests:forest:site; Tral:area; Pulwama | Gujjar Mohalla:locality:site; Kokernag:area; Anantnag	
+372	T	arrests	crime	Vadodara SOG // FICN carriers	Sayajigunj:locality:site; Vadodara; Malda:origin	
+373	N call_or_plan	-	-	-	-	
+374	T	grenade (4 children killed)	unclear	unidentified // civilians	Kolaigaon:village:site; Chirang	
+375	T	arrests	conflict	Meghalaya Police|Pradhannagar PS // GNLA	Salbari:locality:site; Siliguri:reference(outskirts); Darjeeling	
+376	T	arrests; arms_recovery (two modules, nine men)	conflict	J&K Police // LeT, HM	Anantnag, Pulwama:district:site	arrests made over an unstated period, announced on a date -> add date precision announced_only
+377	T	armed_clash x3	conflict	SFs // LeT + HM	Handwara forests:forest:site_area; Zab Giripora, Wagat, Palpora:village:site; Kupwara	
+378	T fragment	drone_interception; arms_recovery	unclear	BSF // -	Attari:village:reference(near); Amritsar	
+379	T	peaceful_protest (student strike observed)	conflict	MSF // -	Manipur:state:site	
+380	N judicial_or_investigation (release from detention)	-	-	-	-	
+381	T	arrests (sedition)	conflict	Asansol Durgapur Police // doctor who treated Kishenji	Asansol:town:site; Bardhaman	
+382	N policy_or_administration	-	-	-	-	
+383	T	arrests	conflict	Police commandos // KNF	New Chekon:locality:site; Imphal East; Senapati, Singjamei...:origin	
+384	N recalled_old_act_only (fragment of a confession)	-	-	-	-	
+385	N policy_or_administration	-	-	-	-	
+386	T fragment	arrests (verb missing)	conflict	- // KCP-MC	Lamlai:village:site; Ukhrul	
+387	N threat_or_warning (diktat)	-	-	-	-	
+388	T	attack x2 (SPOs killed)	conflict	militants // SPOs	Shumnag:village:site; Budgam | Pattan:town:site	'five killed in incidents' is a day total -> cumulative flag works
+389	T	abduction (taken to Bangladesh)	conflict	NLFT // civilians	West Tripura:district:site; Bangladesh:destination	
+390	T	arrests	conflict	Police // NSCN-KN	Meluri:town:site; Phek	
+391	T	attack x2 (workers from Bihar shot)	conflict	unidentified militants // migrant workers	Imphal West:district:site	targets' identity (non-local, migrant, ethnic) -> add target.identity_verbatim
+392	N statistics_or_review	-	-	-	-	
+393	T	arrests (by residents)	conflict	residents // NSCN-IM	Margherita:town:site; Tinsukia	
+394	T	grenade	conflict	militants // Police Station Pattan	Police Station Pattan:police_station:site; Baramulla	
+395	T	mob_violence (abductors lynched)	unclear	mob // abductors	Kalchengpara:village:site; West Garo Hills; Chibinang:origin	
+396	T	other (heroin recovered)	crime	BSF // -	Rajatal:village:site; Amritsar	
+397	T	attack (teacher, CPI-M member)	conflict	CPI-Maoist // party worker	Salboni school:landmark:origin; highway number 9:road:site; West Midnapore	
+398	N policy_or_administration	-	-	-	-	
+399	N diplomacy_or_foreign	-	-	-	-	
+400	T	arrests (arms dealer)	crime_linked_to_group	AR // arms dealer	Koirengei:area:site; Imphal East; Khurai Sajor Leikai, Joy Hotel:activity_area	
+401	T	armed_clash (village attacked)	conflict	Kuki militants // village volunteers|BSF	Sugnu, Pukhao Shantipur:village:site; Imphal East	
+402	T	arrests; arms_recovery	conflict	Bandipora Police|13 RR (+45 CRPF) // LeT associates	Rakhi Hajin:village:site; Hajin:area; Bandipora; Bonikhan Mohalla, Parray Mohalla:origin; Sumbal, Hajin:activity_area	
+403	N judicial_or_investigation (+recalled blast)	-	-	-	-	
+404	N talks_or_negotiation_news	-	-	-	-	
+405	T	arrests	conflict	Police // KCF	Gurdaspur:town:site	
+406	T	arrests (pistol, no group)	crime	Tripura Police // two persons	Dharmanagar:subdivision:site; North Tripura	
+407	T	arrests	conflict	SFs // KCP-MTF	Samurou:village:site; Nepal:origin (son)	
+408	N statement_or_opinion	-	-	-	-	
+409	T	remote_explosive_landmine_ied x3 (polling party)	conflict	CPI-Maoist(implied) // polling party	Tandabai-Jinelgura road:road:site; Motu PS:site_area; Malkangiri	
+410	T	attack (shots at houses, no casualty)	unclear	unidentified // civilians	Heirangoithong Makha Keibung Oinam Leikai:locality:site; Singjamei PS:site_area; Imphal West	
+411	T	looting_property_destruction x2 (rail tracks blown); bandh_or_strike_enforced	conflict	CPI-Maoist // railways	'4 km from Mile station':distance; Ramgarh | 'between Dania station and Jageshwar station':rail; Bokaro	'between X and Y' across a state border -> resolution rule (both ends must agree on district)
+412	N judicial_or_investigation (probe of alleged staged killing)	-	-	-	-	
+413	T	surrender (14)	conflict	PWG|Pratigatana // Police	district police HQ:landmark:site; Karimnagar	
+414	T	arrests (Mar 13 night); peaceful_protest (road blockade)	conflict	AR // youths ; women (meira paibis) // -	Nambol Phoijing:area:site; Tiddim road:road:site	
+415	T	surrender	conflict	ULFA-I // AR|Arunachal Police (+Assam Police)	Noglo:village:site; Tirap	
+416	T	arrests	conflict	Police // HuJI	Lakhanpur:town:site; Kathua	
+417	T	arrests (former cadre's extortion calls)	unclear	Aswapuram Police // former CPI-ML PP cadre	Chintriyala road:road:site; Aswapuram:town; Khammam; Manuguru Heavy Water Plant:target	former members acting alone -> rule needed (crime unless acting for a group)
+418	T	arrests (six, announced)	conflict	J&K Police // LeT OGWs	Bhatta Durrian, Mendhar:earlier_act_site; Poonch	
+419	T	arrests; arms_recovery	conflict	Police // JKNF	New Colony, Sariwarpora Pattan:locality:site; Pattan PS:fir_registered; Baramulla	
+420	T	hideout_or_camp_busted; arms_recovery	conflict	troops // PLA	Theogtang Zoukanou:village:site; Churachandpur	
+421	T	bandh_or_strike_enforced (little impact); posters	conflict	CPI-Maoist KKBN // -	Kandhamal + 3 districts:site; Kambasikia, Sudra Panchayat:gram_panchayat; Taprenga; Kalyansinghpur	
+422	T	bandh_or_strike_enforced; looting_property_destruction (trees felled on road)	conflict	CPI-Maoist // -	Malkangiri-Koraput road:road:site; Malkangiri	
+423	T	armed_clash	conflict	SFs // terrorists	Mirpora:village:site; Beerwah:town	not in conf07 although p=.99 and 11 killed: no district named -> unit_id missing (gate drops texts without a district)
+424	T	disrupted_weapons_use (radio dump)	conflict	BSF // CPI-Maoist	MV68:village:reference(near); Kalimela PS:site_area; Malkangiri	
+425	T	disrupted_weapons_use	conflict	AR // -	New Samtal:area:site; Chandel	
+426	T	grenade (aimed at CRPF camp, hit civilians)	conflict	militants // civilians (intended CRPF)	Hotel Plaza:landmark:site; Sopore:town; Baramulla	intended target flag (as 252)
+427	T	drone_interception	unclear	BSF|Punjab Police // -	Attari:village:reference(outskirts); Amritsar	
+428	N policy_or_administration	-	-	-	-	
+429	T	attack (headmaster refused Maoist rally)	conflict	CPI-Maoist // teacher, ex-panchayat head, CPI-M teachers' wing	West Midnapore:district:site; Radhanagar '5 km from Jhargram':other act	
+430	N policy_or_administration	-	-	-	-	
+431	T	hideout_or_camp_busted (belongings recovered, pursuit)	conflict	SFs // TPC	MaholiaTand hills:hill:site; Chhatterpur PS:site_area; Kaual-Kurkutta:area; Palamu	
+432	T	arrests (Rohingya at railway station)	not_conflict	Police // Rohingya nationals	Agartala railway station:landmark:site; West Tripura	illegal migration -> conflict_class needs value not_conflict
+433	T	remote_explosive_landmine_ied	conflict	CPI-Maoist(suspected) // CoBRA	Tumbahaka forest:forest:site; West Singhbhum	
+434	T	surrender	conflict	CPI-Maoist MVKB // Police	District Police office:landmark:site; Malkangiri; Marigeta, Kalimela PS:origin; Silakota, Sungel, Jantri:earlier_act_site	
+435	T	remote_explosive_landmine_ied	conflict	CPI-Maoist // CRPF	forest area:forest:site; Chhotanagra PS:site_area; Chaibasa:reference; West Singhbhum; Ranchi:died_at	
+436	T fragment	arrests	conflict	SFs // HuJI	Kishtwar:district:site	
+437	N policy_or_administration	-	-	-	-	
+438	T	arrests	conflict	SFs // KYKL	Nongdam:area:site; Ukhrul	
+439	T	abduction (village chief)	conflict	unidentified militants // village leader	Changshang:village:site; Saikul PS:site_area; Senapati	
+440	T	armed_clash	conflict	SFs // LeT	Gossu:village:site; Zakura:area; Srinagar	
+441	T	grenade/bomb at residence	conflict	Kuki militants // civilians	Phoubakchao Ithai Awang Leikai:village:site; Bishnupur	
+442	T	armed_clash; arms_recovery	conflict	CPI-Maoist // Police|DRG	Gumori:area:site; Sukma	
+443	T	disrupted_weapons_use (bomb materials under culvert)	unclear	Police // -	culvert:bridge:site; Kommath Vayal:area; Thalassery:reference; Kannur	party-political violence (Kannur crude bombs): in or out? -> decision
+444	T	arrests	conflict	AR|Police // PLA	Kharashom, Khurai:area:site; Imphal East	
+445	T	looting_property_destruction (guns taken, house burnt)	conflict	CPI-Maoist // ration dealer, CPI-M member	Jugidihi:village:site; Purulia	
+446	T	surrender	conflict	ANVC // Mendipathar PS OC|church leaders	Mendipathar PS:police_station:site; East Garo Hills	
+447	N statement_or_opinion	-	-	-	-	
+448	T	attack (disputed perpetrators)	unclear	counter-insurgents in Army uniform(suspected) // civilians	Balhama:village:site; Rafiabad:area; Baramulla	
+449	T	peaceful_protest (PoK refugees, relief)	not_conflict	PoK DPs' Front // -	Exhibition Ground near Press Club:landmark:site; Jammu	
+450	N statistics_or_review (election turnout, recalled threats)	-	-	-	-	
+451	T	arms_recovery	conflict	Army // -	Lower Sinjol:village:site; Peren	
+452	T	attack (firing + bomb on pilgrims' bus)	conflict	CPI-Maoist // civilians	G.T. Road:road:site; Isri:town; Giridih; Kolkata, Ajmer:destination	
+453	T	armed_clash	conflict	SFs // LeT	Shubdani:village:site; Newa:reference(near); Pulwama; Sopore, Kupwara:activity_area	
+454	T follow_up	death added to June 24 bus blast	conflict	- // civilians	Sibsagar:district:earlier_act_site	follow_up_adds_casualty (as 270); running total 'risen to eight'
+455	N judicial_or_investigation (conviction)	-	-	-	-	
+456	T	attack (two Bangladeshis shot at fence)	unclear	BSF // Bangladeshi nationals	Arnia:border_sector:site	
+457	T	arrests	crime	Police // FICN carrier	Sahabajpur:village:site; Malda	
+458	T	armed_clash	conflict	SFs // militants (group unknown)	Pinjora:area:site; Shopian	
+459	T	arrests	conflict	Maharashtra ATS // BKI (also drug smuggling)	Chembur:locality:site; Diamond Garden:landmark:site; Mumbai; Nanded:origin; Punjab:earlier_act_site	
+460	T	peaceful_protest (Canada)	conflict	SFJ // MP Chandra Arya	Canada:foreign_place:site	in_india=false works
+461	N talks_or_negotiation_news	-	-	-	-	
+462	N statement_or_opinion	-	-	-	-	
+463	N statement_or_opinion	-	-	-	-	
+464	N judicial_or_investigation (extradition, US)	-	-	-	-	
+465	T fragment	arrests	conflict	Police // KCP-MTF (text also says PREPAK)	Langthabal:area:site	group named inconsistently in one text -> faction_verbatim keeps both; check flags it
+466	T	armed_clash (civilian caught in crossfire)	conflict	SFs // unidentified terrorists	Shopian:area:site; Pulwama	
+467	T	armed_clash (woman injured in crossfire)	conflict	DRG|STF // CPI-Maoist	Bodga:village:reference(forests near); Bijapur	
+468	N statement_or_opinion	-	-	-	-	
+469	T fragment	arrests	conflict	troops // HM OGW	Handwara:area:site; Kupwara	
+470	N diplomacy_or_foreign (seizure in Myanmar)	-	-	-	-	
+471	T	grenade (2 children killed)	unclear	unidentified // civilians	Raj Mohalla Warpora:locality:site; Sopore:area; Baramulla	
+472	T fragment	arms_recovery	conflict	SFs // -	Budhal:area:site; Doda	
+473	T	attack (former militant killed)	conflict	unidentified terrorists // former member	Makhdoom Sahib shrine:landmark:reference(near); Nowhatta:area:site; Baramulla(? Nowhatta is in Srinagar)	text's district may be wrong (Nowhatta/Makhdoom Sahib are in Srinagar) -> resolution check catches
+474	T	arrests	conflict	Police // LeT associate	Authoora Bala:village:site; Kreeri:area; Baramulla; Shrakwara Kreeri:origin	
+475	N talks_or_negotiation_news	-	-	-	-	
+476	T	armed_clash (attack on guarded company camp; extortion refused)	conflict	GNLA(suspected) // Police guards	Swangre camp:landmark:site; West Khasi Hills; Samanda:company HQ (target of demand); East Garo Hills	
+477	T	arrests (illegal possession, no group)	crime	Police // individual	Newfield Checkgate:landmark:reference(near); Dimapur	
+478	T fragment	arrests	conflict	Imphal East Police // KCP-MC	Kongpal Mutum Leikai:locality:site; Imphal East	
+479	N statement_or_opinion (Hoho warning)	-	-	-	-	
+480	T	arrests (cash seized, on the move)	conflict	Jharkhand Police // TPC	'on way to Balumath from Chatra via Panki':route; Palamu	act on a route between towns -> resolution rule (district named only)
+481	T	violent_demonstration (stone pelting at CASO)	conflict	residents // 55 RR|SOG (+CRPF)	Sirnoo:village:site; Pulwama	
+482	T	abduction	conflict	ATTF // construction workers	Ganthalang:village:site; West Tripura	
+483	T	disrupted_weapons_use (IED under culvert)	conflict	CRPF|Giridih Police // CPI-Maoist	culvert between Kulhi and Borwapani:bridge:site; Nimiyaghat PS:site_area; Giridih	
+484	T fragment	arrests	conflict	Thoubal Police // KYKL OGW	Leishangthem Bazar:market:site	
+485	T	abduction; attack (killed)	conflict	terrorists // civilians	Kokernag:town:site; Anantnag	
+486	N talks_or_negotiation_news	-	-	-	-	
+487	N judicial_or_investigation	-	-	-	-	
+488	N statement_or_opinion	-	-	-	-	
+489	N search_without_outcome	-	-	-	-	
+490	T fragment	arrests	conflict	Police // MCC	Giridih:district:site	
+491	N statistics_or_review (BSF monthly)	-	-	-	-	
+492	T fragment	arrests	conflict	Imphal East Police // KYKL	Khurai Chingangbam Leikai:locality:site	
+493	T	arms_recovery (explosives, on arrested commander's info)	conflict	CRPF|Police // CPI-Maoist	Kangurra forest:forest:site; Rajnandgaon	
+494	T	looting_property_destruction (conveyor belt burnt)	conflict	CPI-Maoist // NMDC	NMDC Bacheli premises:mine:site; Bailadila	'in the same district' -> fragment (district only by reference)
+495	T	remote_explosive (own IED went off)	conflict	HM // -	Kapran:village:reference(near); Shopian-Kulgam road:road:site	militants killed by own device -> sub-type note (ACLED: remote explosive, actor HM, no actor2)
+496	T	looting_property_destruction (trucks burnt for levy)	conflict	CPI-Maoist(suspected) // construction firm	Ghorebandha:village:reference(near); East Singhbhum; Swarnarekha aqueduct:landmark	
+497	T	arrests	conflict	Thoubal Police // KYKL	Wangjing bazaar:market:site	
+498	T	attack (informer suspicion)	conflict	CPI-Maoist(suspected) // former CPI-ML activist	Guntur:district:site	
+499	T	arrests	conflict	SFs // MULTA	Golandi:village:site; Darrang; Kharupetia:posting_or_base	
+500	T	looting_property_destruction; bandh_or_strike_enforced	conflict	CPI-Maoist // State Police vehicle	Visakhapatnam:district:site	

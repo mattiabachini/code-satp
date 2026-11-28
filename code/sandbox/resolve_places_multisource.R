@@ -2,11 +2,11 @@
 ### SATP: pilot place resolution across SHRID, GeoNames and OSM
 #
 # Second revision of the multisource pilot resolver. DeepSeek answers come from
-# scraped_data/place_cache_pilot.rds only (no API calls).
+# data/intermediate/places/place_cache_pilot.rds only (no API calls).
 #
 # New in this revision:
 # - district filtering adds the alias lists in code/sandbox/district_aliases.csv
-#   and data/district_aliases.csv, plus JW <= 0.10 variants; a name typed "town"
+#   and data/intermediate/places/district_aliases.csv, plus JW <= 0.10 variants; a name typed "town"
 #   is kept and flagged district_hq_name;
 # - exact matches override fuzzy matches for the same place when the exact
 #   matches are consistent (one exact source, within 5 km, or shared SHRID);
@@ -22,13 +22,13 @@
 #          irrigating_peace/.../india_units_2001.gpkg
 #          irrigating_peace/data/input/public/SHRUG/shrug-shrid-poly-shp.zip
 #          irrigating_peace/data/input/public/SHRUG/shrug-pc-keys-dta.zip
-#          scraped_data/place_cache_pilot.rds
-#          data/shrid_loc_names.csv, data/shrid_centroids.rds
-#          data/geonames_gazetteer_india.rds, data/osm_gazetteer_india.rds
-#          data/osm_admin_boundaries_india.gpkg (admin_level_6)
-#          code/sandbox/district_aliases.csv, data/district_aliases.csv
-# Outputs: scraped_data/place_pilot_candidates.csv
-#          scraped_data/place_pilot_multisource.csv
+#          data/intermediate/places/place_cache_pilot.rds
+#          data/intermediate/gazetteers/shrid_loc_names.csv, data/intermediate/gazetteers/shrid_centroids.rds
+#          data/intermediate/gazetteers/geonames_gazetteer_india.rds, data/intermediate/gazetteers/osm_gazetteer_india.rds
+#          data/intermediate/gazetteers/osm_admin_boundaries_india.gpkg (admin_level_6)
+#          code/sandbox/district_aliases.csv, data/intermediate/places/district_aliases.csv
+# Outputs: data/intermediate/places/place_pilot_candidates.csv
+#          data/intermediate/places/place_pilot_multisource.csv
 # Author: Mattia Bachini
 #------------------------------------------------------------------------------#
 
@@ -48,8 +48,8 @@ suppressPackageStartupMessages({
 root <- Sys.getenv("SATP_ROOT", unset = "/Users/mattiabachini/Library/CloudStorage/Dropbox/code-satp")
 ip_dir <- "/Users/mattiabachini/Library/CloudStorage/Dropbox/irrigating_peace/mattia/data/intermediate/restricted/"
 shrug_pub <- "/Users/mattiabachini/Library/CloudStorage/Dropbox/irrigating_peace/data/input/public/SHRUG"
-shrug_dir <- file.path(root, "data/raw/shrug")
-out_dir <- file.path(root, "scraped_data")
+shrug_dir <- file.path(root, "data/input/external/shrug")
+out_dir <- file.path(root, "data/intermediate/places")
 dir.create(out_dir, showWarnings = FALSE)
 dir.create(shrug_dir, showWarnings = FALSE)
 
@@ -149,9 +149,9 @@ units_dt[, state_key := norm_state(state_name)]
 ev <- merge(ev, units_dt[, .(unit_id, unit_name, state_name, unit_lon, unit_lat, state_key)],
             by = "unit_id", all.x = TRUE)
 
-shrid_names <- fread(file.path(root, "data/shrid_loc_names.csv"))
+shrid_names <- fread(file.path(root, "data/intermediate/gazetteers/shrid_loc_names.csv"))
 shrid_key <- as.data.table(readRDS(paste0(ip_dir, "india_shrid_unit_key.rds")))[, .(shrid2, unit_id)]
-shrid_cent <- as.data.table(readRDS(file.path(root, "data/shrid_centroids.rds")))
+shrid_cent <- as.data.table(readRDS(file.path(root, "data/intermediate/gazetteers/shrid_centroids.rds")))
 g <- merge(shrid_names, unique(shrid_key), by = "shrid2", all = FALSE)
 g <- merge(g, shrid_cent, by = "shrid2", all.x = TRUE)
 
@@ -162,7 +162,7 @@ old_dist <- unique(rbind(
   shrid_names[, .(state_key = norm_state(state_name), key = norm(district_name))]
 ))
 alias_files <- c(file.path(root, "code/sandbox/district_aliases.csv"),
-                 file.path(root, "data/district_aliases.csv"))
+                 file.path(root, "data/intermediate/places/district_aliases.csv"))
 aliases <- rbindlist(lapply(alias_files, function(f) {
   a <- fread(f)
   out <- data.table(state = a$state, name = a$alias)
@@ -194,7 +194,7 @@ ss <- ss[nzchar(key) & nchar(key) >= 3]
 ss[, `:=`(feature_id = paste(unit_id, name, sep = "_"), level = "subdistrict",
           subdistrict_name = name, shrid2_own = NA_character_, osm_tag = NA_character_)]
 
-geo <- as.data.table(readRDS(file.path(root, "data/geonames_gazetteer_india.rds")))
+geo <- as.data.table(readRDS(file.path(root, "data/intermediate/gazetteers/geonames_gazetteer_india.rds")))
 geo <- geo[!is.na(unit_id) & !is.na(lon) & !is.na(lat)]
 geo_names <- unique(geo$name)
 geo_key <- data.table(name = geo_names)[, key := norm(name)]
@@ -213,7 +213,7 @@ gf <- geo[feature_class %in% c("T", "L", "H", "V", "R") & nzchar(key) & nchar(ke
           .(unit_id, name, key, lon, lat, feature_id, subdistrict_name, shrid2_own, osm_tag)]
 gf <- unique(gf, by = c("feature_id", "key"))[, level := "feature"]
 
-osm <- as.data.table(readRDS(file.path(root, "data/osm_gazetteer_india.rds")))
+osm <- as.data.table(readRDS(file.path(root, "data/intermediate/gazetteers/osm_gazetteer_india.rds")))
 osm <- osm[(class == "admin" | is.na(size_km) | size_km <= 10) &
              !is.na(unit_id) & !is.na(lon) & !is.na(lat)]
 osm_names <- unique(osm$name)
@@ -242,7 +242,7 @@ state_tabs <- lapply(setNames(states, states), function(st) {
   lapply(tabs, function(t) t[unit_id %in% u])
 })
 
-teh <- st_read(file.path(root, "data/osm_admin_boundaries_india.gpkg"),
+teh <- st_read(file.path(root, "data/intermediate/gazetteers/osm_admin_boundaries_india.gpkg"),
                layer = "admin_level_6", quiet = TRUE)
 teh <- st_make_valid(teh)[, c("osm_id", "name")]
 

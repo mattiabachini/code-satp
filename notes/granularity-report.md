@@ -121,7 +121,7 @@ text of this kind *does* support place-level coding — the gap is in our parsin
 not in the source. Note, though, that ACLED's precision-1 events are mostly
 towns and market centres, not rural villages.
 
-The older geocoding pipeline in `data/satp_location_matched_lat_long.csv`
+The older geocoding pipeline in `data/intermediate/datasets/satp_location_matched_lat_long.csv`
 (9,842 incidents, ~99% geocoded) shows that Google Maps can return coordinates
 for nearly every event, but the matched string is often the district or a
 nearby town, so the coordinates need validation before being treated as
@@ -179,7 +179,7 @@ Northeast 42.1%, other 24.1%.
 5. **Language model** — not run: no API key in this environment. At
    deepseek-flash prices (~400 input tokens and ~40 output per event) it is
    about $0.00008 per event, i.e. **~$3–4 for the analysis set and ~$7–9 for all
-   91,555 events**; a 500-event pilot is ~$0.05. `code/code_events_deepseek.R`
+   91,555 events**; a 500-event pilot is ~$0.05. `code/process/code_events_deepseek.R`
    already has the cache, batching and cost accounting to carry a
    place-extraction prompt, so the pilot is a prompt plus an output parser.
 6. **Incident spread** — only 2.7% of incidents have more than one event part;

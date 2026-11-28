@@ -2,28 +2,28 @@
 .Rhistory
 .RData
 .Ruserdata
-results.DS_Store
 .DS_Store
-~.xlsx
+~$*.xlsx
 literature/
 venv/
+.venv/
 .env
 
-# scraped and derived data
-scraped_data/
+# Derived data is not tracked by default.
 *.csv
 *.rds
+*.gpkg
 
-# OSM extracts (Geofabrik, GB-scale)
-data/raw/osm/*.pbf
+# Keep the small model datasets that were tracked before the reorg.
+!data/intermediate/datasets/*.csv
+!data/intermediate/models/*.csv
+!data/intermediate/gazetteers/shrid_loc_names.csv
+!data/final/satp_clean.csv
 
-# GeoNames country dump
-data/raw/geonames/*.zip
-
-# OSM derived admin boundaries (large)
-data/osm_admin_boundaries_india.gpkg
-
-# SHRID polygon shapefile (large)
-data/raw/shrug/*
-!data/raw/shrug/README.md
-!data/raw/shrug/open_poly.bib
+# Large external raw sources
+data/input/external/osm/*.pbf
+data/input/external/geonames/*.zip
+data/input/external/lgd/*
+data/input/external/shrug/*
+!data/input/external/shrug/README.md
+!data/input/external/shrug/open_poly.bib

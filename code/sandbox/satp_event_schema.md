@@ -2,8 +2,8 @@
 
 One row per distinct incident. A SATP entry that describes several separate incidents becomes several rows. The layout follows ACLED's event structure (one event per row, two actors, a type hierarchy, a civilian-targeting flag, a location hierarchy with a precision code). SATP's multi-label action flags are kept next to the derived ACLED-style type.
 
-Input: `scraped_data/scraped_incidents.rds` (`code/scrape_data_merge.R`).
-Output: `scraped_data/satp_events.rds/.csv`.
+Input: `data/intermediate/scraped/scraped_incidents.rds` (`code/build/scrape_data_merge.R`).
+Output: `data/intermediate/scraped/satp_event_texts.rds/.csv`.
 Unit assignment (`unit_id`) is added downstream in the Irrigating Peace pipeline from `gid_2`, `latitude`/`longitude` or `shrid`.
 
 ## Columns
@@ -87,7 +87,7 @@ The analysis indicators (armed assault, bombing, infrastructure, abduction) are 
 
 ## Mapping from the existing hand-coded data
 
-`data/satp_classification.csv` columns map as: `perpetrator` -> `inter1` (Security -> State forces, Maoist -> Rebel group, Unknown -> `NA`); `civilians`, `security`, `maoist`, `government_officials`, `private_property`, `government_infrastructure`, `non_maoist_armed_group`, `no_target` -> `inter2`; action columns -> flags; `state`, `district`, `block`, `village_name`, `latitude`, `longitude` -> location. In that file the `latitude` and `longitude` headers are swapped (the `longitude` column holds latitude values), so they must be swapped back on read.
+`data/intermediate/datasets/satp_classification.csv` columns map as: `perpetrator` -> `inter1` (Security -> State forces, Maoist -> Rebel group, Unknown -> `NA`); `civilians`, `security`, `maoist`, `government_officials`, `private_property`, `government_infrastructure`, `non_maoist_armed_group`, `no_target` -> `inter2`; action columns -> flags; `state`, `district`, `block`, `village_name`, `latitude`, `longitude` -> location. In that file the `latitude` and `longitude` headers are swapped (the `longitude` column holds latitude values), so they must be swapped back on read.
 
 ## Coding rules
 

@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SATP Pipeline Diagram</title>
+<style>
+:root {
+  --bg: #f7f6f2; --card: #ffffff; --ink: #1d1d1b; --muted: #6b6a66; --line: #c9c6bd;
+  --done: #2f7d4f; --done-bg: #e6f2ea; --wip: #a86a12; --wip-bg: #fbf0dc;
+  --plan: #4a5fa8; --plan-bg: #e8ecf8; --miss: #9b3b3b; --miss-bg: #f6e4e4;
+  --accent: #33302a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #171716; --card: #222220; --ink: #ecebe6; --muted: #a3a199; --line: #4a4843;
+    --done: #7cc79a; --done-bg: #1f3027; --wip: #e3b062; --wip-bg: #3a2e1a;
+    --plan: #9fb0ec; --plan-bg: #232a40; --miss: #e59a9a; --miss-bg: #3b2222; --accent: #ecebe6;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #171716; --card: #222220; --ink: #ecebe6; --muted: #a3a199; --line: #4a4843;
+  --done: #7cc79a; --done-bg: #1f3027; --wip: #e3b062; --wip-bg: #3a2e1a;
+  --plan: #9fb0ec; --plan-bg: #232a40; --miss: #e59a9a; --miss-bg: #3b2222; --accent: #ecebe6;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+main { max-width: 1080px; margin: 0 auto; padding: 28px 16px 60px; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0 0 18px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 24px; font-size: 13px; }
+.tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.done { color: var(--done); background: var(--done-bg); }
+.wip  { color: var(--wip);  background: var(--wip-bg); }
+.plan { color: var(--plan); background: var(--plan-bg); }
+.miss { color: var(--miss); background: var(--miss-bg); }
+.goals { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 26px; }
+.goal { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.goal b { display: block; margin-bottom: 2px; }
+.stage { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; position: relative; }
+.stage h2 { font-size: 17px; margin: 0 0 2px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.stage h2 .id { font-family: ui-monospace, Menlo, monospace; color: var(--muted); font-size: 14px; }
+.stage .what { color: var(--muted); margin: 0 0 12px; font-size: 14px; }
+.grid { display: grid; gap: 10px; }
+.g2 { grid-template-columns: repeat(2, 1fr); }
+.g3 { grid-template-columns: repeat(3, 1fr); }
+.box { border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; font-size: 13.5px; }
+.box .bid { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--muted); }
+.box b { display: block; font-size: 14px; margin: 1px 0 3px; }
+.box ul { margin: 4px 0 0; padding-left: 18px; }
+.box li { margin: 1px 0; }
+.arrow { text-align: center; color: var(--muted); font-size: 13px; margin: 6px 0; }
+.arrow::before { content: "↓"; display: block; font-size: 22px; line-height: 1; color: var(--accent); }
+.side { display: grid; grid-template-columns: 1fr 230px; gap: 12px; align-items: start; }
+.out { border-style: dashed; }
+.ladder { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; font-size: 13.5px; }
+.ladder span.step { border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; background: var(--bg); }
+.ladder span.to { color: var(--muted); }
+.cascade { counter-reset: c; list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.cascade li { display: grid; grid-template-columns: 28px 1fr; gap: 8px; align-items: start; font-size: 13.5px; }
+.cascade li::before { counter-increment: c; content: counter(c); width: 24px; height: 24px; border-radius: 50%;
+  background: var(--accent); color: var(--bg); display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.loop { margin-top: 26px; border: 2px dashed var(--line); border-radius: 12px; padding: 14px 16px; }
+.loop h2 { margin-top: 0; }
+.note { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+@media (max-width: 760px) {
+  .goals, .g2, .g3, .side { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>SATP event and location pipeline</h1>
+  <p class="sub">Draft diagram of <code>notes/event-location-pipeline-plan.md</code>, 2026-11-24. Box ids (e.g. <b>4.3</b>) are for referring to parts when suggesting changes.</p>
+
+  <div class="legend">
+    <span><span class="tag done">built</span> exists and checked</span>
+    <span><span class="tag wip">partial</span> pilot version exists</span>
+    <span><span class="tag plan">planned</span> in the plan, not built</span>
+    <span><span class="tag miss">missing data</span> source not downloaded</span>
+  </div>
+
+  <div class="goals">
+    <div class="goal"><b>Goal 1: only real events count</b>Recollections, follow-ups (investigation, court, arrests "in connection with"), statements, threats and anniversaries are not new events.</div>
+    <div class="goal"><b>Goal 2: most accurate location</b>SHRID village where the text allows, else police-station area, tehsil, district. Target unit SHRID, plus 2001 census code.</div>
+  </div>
+
+  <!-- Stage 0 -->
+  <section class="stage">
+    <h2><span class="id">0</span> Inputs <span class="tag done">built</span></h2>
+    <div class="grid g2">
+      <div class="box"><span class="bid">0.1</span><b>SATP event texts</b>All 91,555 event parts go to stage 1. Current analysis set (~40,700: DistilBERT action confidence &gt; 0.7, analysis action, 2001 unit) is replaced by the stage 3 gate; ~10% of it are non-events by hand validation. DistilBERT kept as a cross-check; old and new district-year counts compared before switching, old kept as robustness.</div>
+      <div class="box"><span class="bid">0.2</span><b>SATP metadata</b>Report date, state, SATP-assigned 2001 district unit, incident id</div>
+    </div>
+  </section>
+  <div class="arrow">one DeepSeek call per text, cached by text hash</div>
+
+  <!-- Stage 1 -->
+  <section class="stage">
+    <h2><span class="id">1</span> Structured extraction <span class="tag plan">planned</span> <span class="tag wip">place-only pilot run</span></h2>
+    <p class="what">Split the text into labelled pieces, each copied word for word, so later checks run without another model call. Open decision: one combined prompt replacing the event-coding and place-extraction prompts.</p>
+    <div class="grid g3">
+      <div class="box"><span class="bid">1.1</span><b>Per act</b>
+        <ul><li>status: new / recalled / follow-up</li><li>trigger words</li><li>action type</li><li>actor, target</li><li>counts (killed, injured, arrested)</li><li>date as written</li><li>items seized or used</li></ul></div>
+      <div class="box"><span class="bid">1.2</span><b>Location pieces</b>
+        <ul><li>site + type (village, town, locality, forest, camp, road, water)</li><li>police station</li><li>sub-district / block</li><li>district, state</li><li>"within" relations</li><li>location role: where it happened / where reported</li></ul></div>
+      <div class="box"><span class="bid">1.3</span><b>Semantic flags</b>
+        <ul><li>abduction vs release / rescue</li><li>body recovered vs killing</li><li>surrender / arrest at a headquarters</li><li>several acts in one text (careful split)</li><li>several or relative dates</li></ul></div>
+    </div>
+    <div class="box" style="margin-top:10px"><span class="bid">1.4</span><b>Added after reading 50 random events</b> <span class="tag plan">new</span>
+      <div class="grid g3" style="margin-top:6px">
+        <ul><li>non-event reasons: judicial, protest, threat, statement / denial, symbolic act, aggregate figures, later identification</li><li>outcome: successful / foiled / failed / defused</li><li>actions: cross-border shelling, sexual violence, beating / ransacking, lynching, extortion</li></ul>
+        <ul><li>actors: foreign forces, mobs, village defence committees, rebel vs rebel; attribution named / suspected / claimed / denied</li><li>counts with ranges and revisions; casualties outside India</li><li>time: act vs consequence date, date ranges, time of day</li></ul>
+        <ul><li>relations: near, between X and Y, direction from X, along a border</li><li>site types: market, religious site, school, hospital, office, security base, railway, mine, border sector / pillar</li><li>levels: sub-division, "area"</li><li>roles: victim's home or posting, hospital, operation base</li><li>several sites per act (serial blasts, raids); vague locations</li></ul>
+      </div>
+    </div>
+    <div class="box" style="margin-top:10px"><span class="bid">1.5</span><b>Added after a targeted batch of 50</b> <span class="tag plan">new</span> (Punjab/other, multi-incident, police station, 2020s, long texts)
+      <div class="grid g3" style="margin-top:6px">
+        <ul><li>text location overrides a wrongly assigned SATP district (Red Fort blast filed under Pulwama)</li><li>non-events: speeches with statistics, forensic / CBI / NIA findings, policy decisions, group splits</li><li>fragments with no act of their own: link to the incident's other parts</li><li>running totals and recaps of earlier days</li></ul>
+        <ul><li><b>decision needed:</b> drones and smuggling at the border, old ordnance found, police-protester clashes, killings inside a group</li><li>acts outside India launched from India (raid into Myanmar), counts revised many times</li><li>disputed accounts (alleged fake encounters)</li><li>targets with roles: sarpanch, activist, informer, workers</li></ul>
+        <ul><li>relations with distances ("100 km from Ranchi")</li><li>roles: area of activity, where wanted, where curfew imposed</li><li>units: police district, police range / division, forest division, revenue division</li><li>sites: highway, toll plaza, bridge, mobile tower, border outpost, national park, river</li><li>dates: intervening night, "today", unknown killing date</li></ul>
+      </div>
+    </div>
+  </section>
+  <div class="arrow">pieces only, no model call</div>
+
+  <!-- Stage 2 -->
+  <section class="stage">
+    <h2><span class="id">2</span> Cheap deterministic checks <span class="tag plan">planned</span></h2>
+    <div class="grid g3">
+      <div class="box"><span class="bid">2.1</span><b>Verbatim</b>Every piece is a substring of the text; otherwise flag as invented</div>
+      <div class="box"><span class="bid">2.2</span><b>Date</b>Act date vs report date; weeks or months earlier means old act</div>
+      <div class="box"><span class="bid">2.3</span><b>District</b>District named in text vs SATP 2001 unit (aliases, LGD for post-2001 districts)</div>
+      <div class="box"><span class="bid">2.4</span><b>Counts</b>Counts consistent with trigger and target</div>
+      <div class="box"><span class="bid">2.5</span><b>Actors</b>Standardise actor and target names with a lookup list</div>
+      <div class="box"><span class="bid">2.6</span><b>Duplicates across texts</b>Link texts reporting the same incident (date, site, counts, actor; "as reported earlier", next-day corrections)</div>
+    </div>
+  </section>
+  <div class="arrow"></div>
+
+  <!-- Stage 3 -->
+  <section class="stage side-wrap">
+    <h2><span class="id">3</span> Event filter <span class="tag plan">planned</span></h2>
+    <div class="side">
+      <div class="grid">
+        <div class="box"><span class="bid">3.1</span><b>Rule</b>Event if at least one act is <i>new</i> and passes the date check. A text mixing an old and a new act is an event, dated to the new act.</div>
+        <div class="box"><span class="bid">3.2</span><b>Current gap</b>DeepSeek's non-event rule has run on only ~2% of the analysis set; ~6% of those were non-events (~2,000-2,500 overall). Example: SATP093603, NIA investigation news about the Pathankot attack.</div>
+      </div>
+      <div class="box out"><span class="bid">3.3</span><b>Out: non-events</b>Kept with reason (recalled, follow-up, statement...), excluded from counts and from location precision</div>
+    </div>
+  </section>
+  <div class="arrow">events only</div>
+
+  <!-- Stage 4 -->
+  <section class="stage">
+    <h2><span class="id">4</span> Location resolution <span class="tag wip">pilot resolver v2</span></h2>
+    <p class="what">Match only the location pieces, inside the event's 2001 unit; map every candidate to a SHRID and 2001 census code.</p>
+
+    <div class="box" style="margin-bottom:10px"><span class="bid">4.1</span><b>Gazetteers</b>
+      <table>
+        <tr><th>source</th><th>status</th><th>role</th></tr>
+        <tr><td>SHRID / SHRUG</td><td><span class="tag done">built</span></td><td>target unit; village names, polygons, centroids; keys to 2001 and 2011 codes</td></tr>
+        <tr><td>OSM (Geofabrik)</td><td><span class="tag done">built</span></td><td>settlements incl. hamlets, forests, roads, police; tehsil (level 6) polygons</td></tr>
+        <tr><td>GeoNames</td><td><span class="tag done">built</span></td><td>extra spellings, terrain features</td></tr>
+        <tr><td>LGD villages</td><td><span class="tag done">downloaded</span></td><td>current district and sub-district per village, 2001/2011 codes; 92.7% link to SHRID</td></tr>
+        <tr><td>LGD blocks</td><td><span class="tag miss">missing</span></td><td>block to village mapping for "X block" mentions</td></tr>
+        <tr><td>India Post pincodes</td><td><span class="tag miss">missing</span></td><td>post offices with coordinates; fourth gazetteer for small places</td></tr>
+        <tr><td>Police station lists</td><td><span class="tag miss">missing</span></td><td>official station lists (data.gov.in, state police), Maoist states first</td></tr>
+        <tr><td>Google Maps</td><td><span class="tag plan">last resort</span></td><td>only for names the free sources cannot resolve or disagree on</td></tr>
+      </table>
+    </div>
+
+    <div class="grid g3">
+      <div class="box"><span class="bid">4.2</span><b>Matching rules</b>
+        <ul><li>one normaliser (Latin-ASCII, type words stripped)</li><li>gazetteer chosen by place type</li><li>exact before fuzzy</li><li>fuzzy thresholds set from the hand checks</li><li>district names and aliases never count as places</li></ul></div>
+      <div class="box"><span class="bid">4.3</span><b>Police stations</b> <span class="tag plan">planned</span>
+        <ul><li>never used as the event's village</li><li>seat village or town in the district</li><li>OSM police points</li><li>official lists</li><li>agreement of the three = confident</li></ul></div>
+      <div class="box"><span class="bid">4.4</span><b>Same-name places</b>
+        <ul><li>use the "within" police station or block</li><li>uniqueness inside the narrowest named unit (LGD)</li><li>e.g. three villages called Rajpur in Chatra</li></ul></div>
+    </div>
+
+    <div class="box" style="margin-top:10px"><span class="bid">4.5</span><b>Check cascade</b> <span class="tag plan">planned</span> &nbsp;each candidate, coarse to fine; a failed check moves the event down one level and records why
+      <ol class="cascade" style="margin-top:8px">
+        <li><span><b>State</b> point lies in the state the text names</span></li>
+        <li><span><b>District</b> point in the 2001 unit (1-2 km tolerance); mismatch also tested against the district named in the text</span></li>
+        <li><span><b>Tehsil / block</b> matched SHRID listed under the named sub-district in LGD (code lookup), else OSM level-6 polygon with tolerance</span></li>
+        <li><span><b>Police station</b> within a plausible distance of the named station, same tehsil where known</span></li>
+        <li><span><b>SHRID polygon</b> the polygon the point falls in carries the extracted name (or is its parent village)</span></li>
+        <li><span><b>Uniqueness</b> name unique inside the narrowest named unit; otherwise not a village</span></li>
+      </ol>
+      <div class="ladder"><b>Fallback:</b>
+        <span class="step">SHRID village</span><span class="to">→</span>
+        <span class="step">police-station area</span><span class="to">→</span>
+        <span class="step">tehsil</span><span class="to">→</span>
+        <span class="step">district</span>
+      </div>
+    </div>
+
+    <div class="box" style="margin-top:10px"><span class="bid">4.6</span><b>Confidence tiers</b>
+      shrid (2+ sources share a SHRID) &gt; high (2+ within 5 km) &gt; single exact &gt; police station / tehsil &gt; single fuzzy &gt; conflict &gt; district only.
+      Flags: city-wide SHRID, district-headquarters name, outside-unit match (possible SATP district error).</div>
+  </section>
+  <div class="arrow"></div>
+
+  <!-- Output -->
+  <section class="stage out">
+    <h2><span class="id">5</span> Output per event</h2>
+    <div class="grid g3">
+      <div class="box"><span class="bid">5.1</span><b>Event coding</b>is_event + reason, actions, actor, target, counts, act date</div>
+      <div class="box"><span class="bid">5.2</span><b>Location</b>shrid2, 2001 census code, police station, tehsil, 2001 unit, lon/lat, level</div>
+      <div class="box"><span class="bid">5.3</span><b>Audit trail</b>tier, checks passed (vector), fallback reason, sources and match types</div>
+    </div>
+  </section>
+
+  <!-- Validation loop -->
+  <section class="loop">
+    <h2><span class="id" style="font-family:ui-monospace,Menlo,monospace;color:var(--muted);font-size:14px">6</span> Validation loop <span class="tag wip">sheet built, checks under way</span></h2>
+    <div class="grid g3">
+      <div class="box"><span class="bid">6.1</span><b>Development set</b>100 events, simple random draw from the 500 pilot events, weights to the analysis set</div>
+      <div class="box"><span class="bid">6.2</span><b>Labels</b>Mattia's rows = benchmark; Claude + Haiku label the rest; stronger model on disagreements; new is_event column</div>
+      <div class="box"><span class="bid">6.3</span><b>Metrics</b>non-event precision and recall; share at village / police station / tehsil; accuracy by tier</div>
+    </div>
+    <p class="note">Patterns found here feed back into stages 1-4 (as with the police-station and non-event cases). Once the metrics are acceptable: full analysis set (~40,700), then all 91,555 events.</p>
+  </section>
+</main>
+</body>
+</html>

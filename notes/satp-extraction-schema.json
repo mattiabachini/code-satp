@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "satp-extraction-schema-v1",
+  "title": "SATP event extraction, draft v1 (2026-11-24; v0 plus the gaps found coding 250 texts)",
+  "description": "One object per SATP event text. Every *_verbatim field copies words from the text exactly, so later code can check them with a string match. Definitions and decision rules are in notes/satp-codebook.md.",
+  "type": "object",
+  "required": ["text_status", "acts", "sources", "fragment", "links"],
+  "properties": {
+    "text_status": {
+      "description": "Does the text report at least one new act? Section 1 of the codebook.",
+      "enum": ["has_new_act", "no_new_act"]
+    },
+    "no_act_reason": {
+      "description": "Filled only when text_status is no_new_act.",
+      "enum": ["statement_or_opinion", "threat_or_warning", "call_or_plan", "policy_or_administration", "judicial_or_investigation", "talks_or_negotiation_news", "group_internal_affairs", "intelligence_or_assessment", "statistics_or_review", "recalled_old_act_only", "diplomacy_or_foreign", "search_without_outcome", "operation_summary", "other"]
+    },
+    "fragment": {
+      "description": "True when the text cannot be read on its own (e.g. 'In the second incident', 'the blast appeared to be the handiwork of').",
+      "type": "boolean"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name_verbatim": {"type": "string"},
+          "source_type": {"enum": ["newspaper", "news_agency", "web_portal", "tv", "official_social_media", "official_statement", "group_statement", "unnamed_media", "other"]},
+          "report_date_text": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "delayed_report": {"type": "boolean", "description": "Text says 'according to a delayed report' or similar."},
+    "links": {
+      "description": "Earlier acts the text refers to (for linking and to stop double counts).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "relation": {"enum": ["recalls", "follow_up_of", "investigation_of", "arrest_for", "protest_against", "retaliation_for", "satp_earlier_report"]},
+          "earlier_act_verbatim": {"type": "string"},
+          "earlier_date_text": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "acts": {
+      "description": "One item per distinct act (different action, place or date). Recalled acts are listed too, with status recalled, so they can be dropped later.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/act"}
+    }
+  },
+  "$defs": {
+    "act": {
+      "type": "object",
+      "required": ["status", "trigger_verbatim", "event_type", "sub_event_type", "conflict_class", "actor1", "actor2", "places", "date"],
+      "properties": {
+        "status": {
+          "description": "new = first report of an act that happened on or near the report date; follow_up = new information on an earlier act that does not add a new act (identification, search for bodies, operation continuing); follow_up_adds_casualty = a victim of an earlier act died later (counts go to the earlier act, never a new event); recalled = mentioned as background; planned_or_threatened = not yet happened.",
+          "enum": ["new", "follow_up", "follow_up_adds_casualty", "recalled", "planned_or_threatened"]
+        },
+        "attempt_failed": {"type": "boolean", "description": "Bomb did not explode, attack repulsed with no harm, kidnap bid foiled."},
+        "multi_site": {"type": "boolean", "description": "One act spread over several places or districts (simultaneous raids, a bandh across districts). Resolve to the smallest unit that contains all sites."},
+        "secondary_sub_event_type": {"type": ["string", "null"], "description": "Second sub-type of the same act, e.g. an ambush in which rifles were also looted."},
+        "trigger_verbatim": {"type": "string", "description": "The verb phrase that states the act, e.g. 'shot dead', 'were arrested', 'surrendered', 'recovered'."},
+        "event_type": {"enum": ["battles", "explosions_remote_violence", "violence_against_civilians", "protests", "riots", "strategic_developments", "not_conflict"]},
+        "sub_event_type": {
+          "description": "ACLED sub-types plus SATP additions marked +. +threat_or_diktat = a group threatens civilians over ethnicity, religion, dress or language (event); bans with no threat to people are not events.",
+          "enum": [
+            "armed_clash", "government_regains_territory", "non_state_actor_overtakes_territory",
+            "shelling_artillery_missile", "remote_explosive_landmine_ied", "grenade", "suicide_bomb", "air_drone_strike",
+            "attack", "abduction_forced_disappearance", "sexual_violence",
+            "peaceful_protest", "protest_with_intervention", "excessive_force_against_protesters",
+            "violent_demonstration", "mob_violence",
+            "arrests", "disrupted_weapons_use", "looting_property_destruction", "change_to_group_activity", "headquarters_or_base_established", "non_violent_transfer_of_territory", "other",
+            "+surrender", "+arms_recovery", "+hideout_or_camp_busted", "+hostage_released", "+extortion_demand", "+bandh_or_strike_enforced", "+infiltration_foiled", "+custodial_killing", "+body_found", "+drone_interception", "+legacy_ordnance", "+threat_or_diktat"
+          ]
+        },
+        "conflict_class": {
+          "description": "Section 4 of the codebook.",
+          "enum": ["conflict", "crime_linked_to_group", "crime", "interstate", "not_conflict", "unclear"]
+        },
+        "conflict_reason_verbatim": {"type": ["string", "null"], "description": "Words that justify conflict_class (group name, stated motive)."},
+        "attribution": {"enum": ["stated", "suspected", "claimed_by_group", "denied_by_group", "disputed", "unidentified"]},
+        "disputed_account": {"type": "boolean", "description": "Another party contests the official version (fake encounter claims, group denies)."},
+        "actor1": {"$ref": "#/$defs/actor"},
+        "supporting_actor1": {"$ref": "#/$defs/actor_or_null"},
+        "actor2": {"$ref": "#/$defs/actor_or_null"},
+        "supporting_actor2": {"$ref": "#/$defs/actor_or_null"},
+        "more_actors_verbatim": {"type": "array", "items": {"type": "string"}, "description": "Third and later actors on either side, verbatim."},
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "verbatim": {"type": "string"},
+              "category": {"enum": ["security_forces", "civilian", "elected_politician", "party_worker", "government_official", "village_leader", "alleged_informer", "businessperson_contractor", "worker_labourer", "former_member", "member_of_other_group", "journalist", "religious_or_community_leader", "infrastructure", "private_property", "none"]},
+              "affiliation_verbatim": {"type": ["string", "null"]},
+              "identity_verbatim": {"type": ["string", "null"], "description": "Ethnic, religious or origin identity when the text gives it ('workers from Bihar', 'non-locals', 'Adivasi villagers')."},
+              "intended": {"type": "boolean", "description": "True for the intended target when the people hit were others (grenade aimed at a CRPF camp hit civilians)."}
+            }
+          }
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "killed_security": {"type": ["integer", "null"]},
+            "killed_militant": {"type": ["integer", "null"]},
+            "killed_civilian": {"type": ["integer", "null"]},
+            "killed_unknown": {"type": ["integer", "null"]},
+            "injured": {"type": ["integer", "null"]},
+            "abducted": {"type": ["integer", "null"]},
+            "arrested": {"type": ["integer", "null"]},
+            "surrendered": {"type": ["integer", "null"]},
+            "count_verbatim": {"type": ["string", "null"]},
+            "cumulative_total_mentioned": {"type": "boolean", "description": "Text gives a running toll; counts above hold only the new ones."},
+            "provisional": {"type": "boolean", "description": "Bodies yet to be recovered, operation continuing, blood marks only, 'unconfirmed reports put the figure at five'."}
+          }
+        },
+        "weapons_verbatim": {"type": "array", "items": {"type": "string"}},
+        "weapon_category": {"enum": ["firearm", "ied_landmine", "grenade", "mortar_shell", "drone", "bladed", "blunt_or_beating", "arson", "none", "unknown"]},
+        "items_seized_verbatim": {"type": "array", "items": {"type": "string"}},
+        "motive_verbatim": {"type": ["string", "null"]},
+        "motive_category": {"enum": ["political_or_insurgent", "informer_suspicion", "extortion_or_levy", "revenge", "factional", "ethnic", "religious", "personal_or_criminal", "election", "unknown"]},
+        "in_india": {"type": "boolean"},
+        "country_if_abroad": {"type": ["string", "null"]},
+        "places": {"type": "array", "items": {"$ref": "#/$defs/place"}},
+        "date": {
+          "type": "object",
+          "properties": {
+            "date_verbatim": {"type": ["string", "null"]},
+            "precision": {"enum": ["day", "night_between_two_days", "range", "month", "unspecified_in_text", "unknown_killing_date", "announced_only"]},
+            "report_date_verbatim": {"type": ["string", "null"], "description": "When the text separates the report or tweet date from the act date ('tweets ... on April 4', 'according to the media reports of April 18')."},
+            "time_of_day_verbatim": {"type": ["string", "null"]}
+          }
+        }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "properties": {
+        "name_verbatim": {"type": "string"},
+        "actor_type": {
+          "description": "ACLED inter codes.",
+          "enum": ["state_forces", "rebel_group", "political_militia", "identity_militia", "rioters", "protesters", "civilians", "external_or_other_forces", "criminal_group", "unidentified_armed_group"]
+        },
+        "group_name": {"type": ["string", "null"], "description": "Short name from the actor list (CPI-Maoist, ULFA-I, NSCN-IM, HM, LeT, CRPF, Army, State Police...)."},
+        "faction_verbatim": {"type": ["string", "null"]},
+        "unit_verbatim": {"type": ["string", "null"], "description": "e.g. '55 RR', 'CoBRA 204', 'Bishnupur police commandos'."},
+        "foreign": {"type": "boolean"}
+      }
+    },
+    "actor_or_null": {"oneOf": [{"$ref": "#/$defs/actor"}, {"type": "null"}]},
+    "place": {
+      "type": "object",
+      "required": ["name_verbatim", "level", "role"],
+      "properties": {
+        "name_verbatim": {"type": "string"},
+        "level": {"enum": ["state", "division_region", "district", "police_district", "subdivision", "tehsil_block_mandal_circle", "police_station", "police_outpost", "gram_panchayat", "group_designated_camp", "village_hamlet", "town_city", "locality_mohalla_ward", "market_chowk", "landmark_facility", "security_camp_or_post", "road_highway", "bridge_rail", "forest_reserve_park", "hill_ghati", "river_nullah_lake", "mine", "border_sector_pillar", "sea_coast", "foreign_place", "area_unspecified"]},
+        "role": {
+          "description": "site = where the act happened; site_area = administrative area containing the site ('under X PS limits'); reference = a nearby place used to describe the site; route = the act happened on the way between named places; responding_ps = the police station whose team reached the spot (usually the jurisdiction); site_from_actor_unit = no place in the text, only the unit's home ('Delhi Police Special Cell'); the rest are not the act site.",
+          "enum": ["site", "site_area", "reference", "route", "responding_ps", "site_from_actor_unit", "origin_residence", "posting_or_base", "fir_registered", "court_or_custody", "body_found", "body_taken_to", "died_at", "activity_area", "earlier_act_site", "destination"]
+        },
+        "relation_verbatim": {"type": ["string", "null"], "description": "'under', 'near', 'about 100 km from', 'east of', 'bordering', 'along'."},
+        "distance_km": {"type": ["number", "null"]},
+        "direction": {"enum": ["n", "ne", "e", "se", "s", "sw", "w", "nw", null]},
+        "parent_verbatim": {"type": ["string", "null"], "description": "The next larger unit named with it ('Raghunathnagar Police Station' for 'Sonhat village')."}
+      }
+    }
+  }
+}

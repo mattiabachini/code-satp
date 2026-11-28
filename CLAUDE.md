@@ -8,10 +8,19 @@ SATP Conflict Data Pipeline: fine-tunes transformer models (BERT variants, T5) t
 
 ## Architecture
 
-**Data flow:** SATP website → Streamlit scraper → Google Sheets → R wrangling (Quarto `.qmd`) → task-specific CSVs → model training (Colab notebooks) → fine-tuned models → inference app → coded events back to Google Sheets.
+**Data flow:** SATP website → Streamlit scraper → Google Sheets → raw scrape CSVs (`data/input/satp_scrape/`) → `code/build/scrape_data_merge.R` → merged incidents (`data/intermediate/scraped/`) → district matching / LLM coding (`code/process/`) → coded events (`data/intermediate/coded/`) → model training (Colab notebooks) → fine-tuned models → inference app. The separate hand-coded branch runs from `data/input/satp_handcoded/satp-dataset.xlsx` through `code/build/wrangle_satp.qmd` to `data/final/satp_clean.csv`, then `code/process/select_vars_for_models.qmd` writes the per-task CSVs to `data/intermediate/datasets/`.
+
+**Data layout (strict):**
+- `data/input/` — raw, read-only. Never write here.
+- `data/intermediate/` — all derived, regenerable data: `scraped/`, `coded/`, `datasets/`, `places/`, `gazetteers/`, `validation/`, `models/`.
+- `data/final/` — analysis-ready datasets: `satp_clean.csv`, `analysis_set_events.rds`.
+- The data tree is mostly git-ignored; the small model CSVs that were already tracked are explicitly kept.
 
 **Key components:**
-- `data/` — Source dataset (`satp-dataset.xlsx`), R wrangling scripts (`.qmd`), and per-task CSVs (perpetrator.csv, action_type.csv, target_type.csv, location_info.csv, deaths.csv, etc.)
+- `code/build/` — source ingestion: `scrape_data_merge.R`, `wrangle_satp.qmd`
+- `code/process/` — cross-source processing: `split_multi_incident_entries.R`, `select_vars_for_models.qmd`, `match_event_districts.R`, `district_gazetteer_baseline.R`, `code_events_deepseek.R`, `classify_actions_local.py`
+- `code/analyze/` — validation, EDA and model comparison
+- `code/sandbox/` — scratch and experimental scripts
 - `models/classification-models/` — Jupyter notebooks for single-label (perpetrator) and multi-label (action type, target type) classification using BERT, RoBERTa, DistilBERT, ConfliBERT, ELECTRA, XLNet. Contains `utils/` for training helpers and `imbalance-handling/` for class imbalance strategies.
 - `models/location-models/` — T5 seq2seq location extraction notebooks
 - `models/count-models/` — T5 QA-based count extraction (deaths, injuries, arrests, surrenders, abductions)
@@ -19,6 +28,8 @@ SATP Conflict Data Pipeline: fine-tunes transformer models (BERT variants, T5) t
 - `streamlit-app/` — Streamlit scraping app (`app.py`) for collecting incidents from SATP. Deployed on Streamlit Cloud.
 - `papers/` and `presentations/` — Academic papers and presentations in Quarto
 - `village-matching/` — Fuzzy matching for location name resolution
+- `documentation/` — coding manuals and pipeline diagram
+- `old/` — retired notebooks, scripts, backups and lock files
 
 ## Common Commands
 
@@ -36,9 +47,17 @@ cd streamlit-app && streamlit run app.py
 # Run inference app locally
 cd hugging-face-hosting-inference && streamlit run app.py
 
-# Render R/Quarto data wrangling scripts
-quarto render data/wrangle_satp.qmd
-quarto render data/select_vars_for_models.qmd
+# Build: merge raw scrape -> incidents
+Rscript code/build/scrape_data_merge.R
+
+# Build: clean the hand-coded workbook
+quarto render code/build/wrangle_satp.qmd
+
+# Process: per-task model datasets
+quarto render code/process/select_vars_for_models.qmd
+
+# Process: split multi-incident entries into events
+Rscript code/process/split_multi_incident_entries.R
 
 # Render R visualization scripts
 quarto render papers/location-extraction/data-viz/bootstrap_significance_tables.R
@@ -46,7 +65,7 @@ quarto render papers/location-extraction/data-viz/bootstrap_significance_tables.
 
 ## Model Training
 
-Training runs on **Google Colab** with GPU. Notebooks clone the repo, load CSVs, and run experiments across multiple model architectures and data fractions (3%–100%). Key config pattern:
+Training runs on **Google Colab** with GPU. Notebooks clone the repo, load CSVs, and run experiments across multiple model architectures and data fractions (3%–100%). The local per-task CSVs are under `data/intermediate/datasets/` (the Colab cells that fetch `raw.githubusercontent.com/.../data/...` still point at the upstream repo). Key config pattern:
 
 ```python
 EXPERIMENT_CONFIG = {

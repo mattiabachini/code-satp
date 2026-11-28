@@ -35,13 +35,13 @@
 # size_km: length in km for line features, sqrt(area in km2) for polygons, 0 for
 # nodes.
 #
-# Output:  data/osm_gazetteer_india.rds  columns osm_id, osm_type, name,
+# Output:  data/intermediate/gazetteers/osm_gazetteer_india.rds  columns osm_id, osm_type, name,
 #          name_variant, class, osm_tag, admin_level, size_km, lon, lat, unit_id
-#          data/osm_admin_boundaries_india.gpkg, one layer per admin_level
+#          data/intermediate/gazetteers/osm_admin_boundaries_india.gpkg, one layer per admin_level
 #          (admin_level_6 ... admin_level_10), columns osm_id, osm_type, name,
 #          name variants (name_en, alt_name, old_name), admin_level, geometry
 #
-# Input:   data/raw/osm/india-latest.osm.pbf   (Geofabrik, see the README there)
+# Input:   data/input/external/osm/india-latest.osm.pbf   (Geofabrik, see the README there)
 #          irrigating_peace/mattia/data/intermediate/restricted/india_units_2001.gpkg
 # Author: Mattia Bachini
 #------------------------------------------------------------------------------#
@@ -53,10 +53,10 @@ suppressPackageStartupMessages({
 })
 
 root <- Sys.getenv("SATP_ROOT", unset = "/Users/mattiabachini/Library/CloudStorage/Dropbox/code-satp")
-pbf  <- Sys.getenv("SATP_OSM_PBF", unset = file.path(root, "data/raw/osm/india-latest.osm.pbf"))
+pbf  <- Sys.getenv("SATP_OSM_PBF", unset = file.path(root, "data/input/external/osm/india-latest.osm.pbf"))
 gpkg_units <- "/Users/mattiabachini/Library/CloudStorage/Dropbox/irrigating_peace/mattia/data/intermediate/restricted/india_units_2001.gpkg"
-out_rds <- file.path(root, "data/osm_gazetteer_india.rds")
-out_admin <- file.path(root, "data/osm_admin_boundaries_india.gpkg")
+out_rds <- file.path(root, "data/intermediate/gazetteers/osm_gazetteer_india.rds")
+out_admin <- file.path(root, "data/intermediate/gazetteers/osm_admin_boundaries_india.gpkg")
 stopifnot(file.exists(pbf))
 
 work <- file.path(tempdir(), "osm_gazetteer")
@@ -334,7 +334,7 @@ norm_state <- function(x) {
   x <- gsub("\\s+", " ", x)
   trimws(x)
 }
-shrid <- fread(file.path(root, "data/shrid_loc_names.csv"))
+shrid <- fread(file.path(root, "data/intermediate/gazetteers/shrid_loc_names.csv"))
 shrid[, state_key := norm_state(state_name)]
 den <- shrid[, .(state_name = state_name[1],
                  shrid_subdistricts = uniqueN(subdistrict_name, na.rm = TRUE),
@@ -384,4 +384,4 @@ per_unit <- settle[, .(n_settlements = .N), by = unit_id]
 u <- merge(u, per_unit, by = "unit_id", all.x = TRUE)
 set(u, which(is.na(u$n_settlements)), "n_settlements", 0L)
 u[, settlements_per_1000_shrids := 1000 * n_settlements / n_shrids]
-saveRDS(u, file.path(root, "data/osm_gazetteer_india_units.rds"))
+saveRDS(u, file.path(root, "data/intermediate/gazetteers/osm_gazetteer_india_units.rds"))

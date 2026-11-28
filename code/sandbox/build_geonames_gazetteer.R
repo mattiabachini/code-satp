@@ -23,9 +23,9 @@
 # Duplicates of the same string within a geonameid are collapsed, preferring
 # name > ascii > alternate > translit.
 #
-# Input:   data/raw/geonames/IN.zip   (GeoNames, see the README there)
+# Input:   data/input/external/geonames/IN.zip   (GeoNames, see the README there)
 #          irrigating_peace/mattia/data/intermediate/restricted/india_units_2001.gpkg
-# Output:  data/geonames_gazetteer_india.rds  columns geonameid, name,
+# Output:  data/intermediate/gazetteers/geonames_gazetteer_india.rds  columns geonameid, name,
 #          name_variant, feature_class, feature_code, lon, lat, unit_id
 #
 # Column mapping from the OSM gazetteer: osm_id -> geonameid, osm_tag ->
@@ -42,9 +42,9 @@ suppressPackageStartupMessages({
 })
 
 root <- Sys.getenv("SATP_ROOT", unset = "/Users/mattiabachini/Library/CloudStorage/Dropbox/code-satp")
-zip_path <- Sys.getenv("SATP_GEONAMES_ZIP", unset = file.path(root, "data/raw/geonames/IN.zip"))
+zip_path <- Sys.getenv("SATP_GEONAMES_ZIP", unset = file.path(root, "data/input/external/geonames/IN.zip"))
 gpkg_units <- "/Users/mattiabachini/Library/CloudStorage/Dropbox/irrigating_peace/mattia/data/intermediate/restricted/india_units_2001.gpkg"
-out_rds <- file.path(root, "data/geonames_gazetteer_india.rds")
+out_rds <- file.path(root, "data/intermediate/gazetteers/geonames_gazetteer_india.rds")
 stopifnot(file.exists(zip_path), file.exists(gpkg_units))
 
 work <- file.path(tempdir(), "geonames_gazetteer")

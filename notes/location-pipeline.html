@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SATP location pipeline</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* Layout: one column of stages top to bottom; gazetteers sit just above Match; dashed refine loop runs up the right side */
+:root {
+  --bg: #eef1f4; --surface: #ffffff; --ink: #15202b; --muted: #5b6875;
+  --line: #d3dae1; --line-strong: #aab5c0; --accent: #1d5fb8; --arrow: #7d8a97;
+  --done: #1b7f57;   --done-bg: #e1f3ea;
+  --build: #a86a00;  --build-bg: #fbf0d6;
+  --refine: #c4411f; --refine-bg: #fbe5de;
+  --font-head: "Space Grotesk", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10161c; --surface: #18212a; --ink: #e8eef3; --muted: #93a1ae;
+    --line: #2b3844; --line-strong: #4a5b6b; --accent: #6fa8f0; --arrow: #6c7b89;
+    --done: #55c796; --done-bg: #173a2c; --build: #e9b44c; --build-bg: #3d3014;
+    --refine: #f08a68; --refine-bg: #43231a; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.4; padding: 24px 16px 48px; }
+header { max-width: 720px; margin: 0 auto 26px; }
+h1 { font-family: var(--font-head); font-size: 26px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 14px; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 12.5px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.count { color: var(--muted); font-size: 12.5px; }
+.btn { font: inherit; font-size: 12.5px; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 7px; padding: 6px 11px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn:focus-visible, .node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; border: 2px solid var(--line-strong); background: transparent; display: inline-block; }
+[data-s="done"] > .dot, .dot[data-s="done"] { background: var(--done); border-color: var(--done); }
+[data-s="build"] > .dot, .dot[data-s="build"] { background: var(--build); border-color: var(--build); }
+[data-s="refine"] > .dot, .dot[data-s="refine"] { background: var(--refine); border-color: var(--refine); }
+
+.flow { max-width: 720px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 40px; row-gap: 32px; }
+.item { grid-column: 1; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; position: relative; min-width: 0; }
+.item:not(.last)::before { content: ""; position: absolute; left: 50%; bottom: -29px; margin-left: -1px; width: 2px; height: 22px; background: var(--arrow); }
+.item:not(.last)::after { content: ""; position: absolute; left: 50%; bottom: -28px; margin-left: -5px; width: 9px; height: 9px; border-right: 2px solid var(--arrow); border-bottom: 2px solid var(--arrow); transform: rotate(45deg); }
+.loop { grid-column: 2; margin: 24px 0 24px; border: 2px dashed var(--line-strong); border-left: 0; border-radius: 0 12px 12px 0; position: relative; }
+.loop::before { content: ""; position: absolute; left: -1px; top: -7px; width: 10px; height: 10px; border-bottom: 2px solid var(--line-strong); border-left: 2px solid var(--line-strong); transform: rotate(45deg); }
+.loop span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); writing-mode: vertical-rl; background: var(--bg); padding: 10px 0; color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+.head { display: flex; align-items: baseline; gap: 8px; }
+.num { font-family: var(--font-head); font-weight: 600; font-size: 12px; color: var(--accent); }
+.phase { margin-left: auto; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; }
+.phase.locate { color: var(--accent); border-color: var(--accent); }
+h2 { font-family: var(--font-head); font-size: 15px; font-weight: 600; margin: 0; }
+.tag { color: var(--muted); font-size: 11.5px; margin: 1px 0 10px; min-height: 16px; }
+.nodes { display: flex; flex-wrap: wrap; gap: 6px; }
+.node { font: inherit; font-size: 13px; color: var(--ink); text-align: left; flex: 1 1 200px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; border-radius: 8px; border: 1px dashed var(--line-strong); background: transparent; cursor: pointer; }
+.node:hover { border-color: var(--accent); }
+.node[data-s="done"] { border: 1px solid var(--done); background: var(--done-bg); }
+.node[data-s="build"] { border: 1px solid var(--build); background: var(--build-bg); }
+.node[data-s="refine"] { border: 1px solid var(--refine); background: var(--refine-bg); }
+.node.out { color: var(--muted); font-style: italic; }
+.ladder { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12px; color: var(--muted); }
+.ladder b { font-weight: 500; color: var(--ink); }
+.ladder i { font-style: normal; color: var(--arrow); }
+.note { max-width: 720px; margin: 22px auto 0; color: var(--muted); font-size: 12.5px; white-space: pre-wrap; }
+@media (prefers-reduced-motion: no-preference) { .node { transition: background .15s, border-color .15s; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>SATP location pipeline</h1>
+  <p class="sub">From the SATP website to a SHRID village. Click a box to change its status.</p>
+  <div class="tools">
+    <div class="legend" aria-label="Status legend">
+      <span><i class="dot" data-s="done"></i>done</span>
+      <span><i class="dot" data-s="build"></i>building</span>
+      <span><i class="dot" data-s="refine"></i>to refine</span>
+      <span><i class="dot"></i>to do</span>
+    </div>
+    <span class="count" id="count"></span>
+    <button class="btn" id="copy" type="button">Copy outline</button>
+    <button class="btn" id="reset" type="button">Reset</button>
+  </div>
+</header>
+
+<div class="flow" id="flow"></div>
+<p class="note" id="msg" aria-live="polite">Statuses are a first guess and are saved in this browser only.</p>
+
+<script>
+var ITEMS = [
+  { id: "p1", n: 1, phase: "prepare", name: "Scrape SATP", tag: "monthly pages, five series", nodes: [
+    ["India, J&K, Maoist, Northeast, Punjab", "done"], ["Date and summary per incident", "done"] ] },
+  { id: "p2", n: 2, phase: "prepare", name: "Merge and clean", tag: "scrape_data_merge.R", nodes: [
+    ["Merge files, sort by date", "done"], ["Duplicate check", "done"], ["Month gap check", "done"] ] },
+  { id: "p3", n: 3, phase: "prepare", name: "Split into events", tag: "rules + DeepSeek labels sentences", nodes: [
+    ["Flag multi-incident entries", "done"], ["One text per event", "done"] ] },
+  { id: "p4", n: 4, phase: "prepare", name: "District unit", tag: "name match, no model", nodes: [
+    ["Alias table to 2001 unit", "done"], ["State and series tie-breaks", "done"], ["85.8% get a unit", "refine"] ] },
+  { id: "p5", n: 5, phase: "prepare", name: "Action classes", tag: "DistilBERT, local", nodes: [
+    ["Seven action probabilities", "done"], ["Confidence", "done"] ] },
+  { id: "p6", n: 6, phase: "prepare", name: "Analysis set", tag: "91,555 events to 40,674", nodes: [
+    ["Confidence above 0.7", "done"], ["Four action types", "done"], ["Has a district unit", "done"] ] },
+  { id: "s2", n: 7, name: "Extract", tag: "DeepSeek, one call", nodes: [
+    ["Place pieces", "refine"], ["Split acts", "todo"], ["Actor, target, trigger", "todo"],
+    ["Date as written", "todo"], ["Items seized", "todo"],
+    ["Abduction / release flags", "todo"], ["Multi-act, multi-date flags", "todo"] ] },
+  { id: "s3", n: 8, name: "Event filter", tag: "code + DeepSeek", nodes: [
+    ["DeepSeek event check: 2% run", "build"], ["New, recalled or follow-up?", "todo"], ["Date vs report date", "todo"],
+    ["Pieces found in text", "todo"], ["Not an event: dropped", "todo", "out"] ] },
+  { id: "src", name: "Gazetteers", tag: "every name is looked up here", nodes: [
+    ["SHRID / SHRUG", "done"], ["OSM", "done"], ["GeoNames", "done"], ["Census 2001, 2011", "build"],
+    ["LGD", "todo"], ["India Post", "todo"], ["Open Government Data", "todo"] ] },
+  { id: "s4", n: 9, name: "Match", tag: "inside the district", nodes: [
+    ["Exact name", "done"], ["Fuzzy name", "refine"], ["Same name: use station / block", "build"], ["Police station seat", "todo"] ] },
+  { id: "s5", n: 10, name: "Check", tag: "each step can fail", nodes: [
+    ["State", "todo"], ["District", "build"], ["Tehsil / block", "build"],
+    ["Police station distance", "todo"], ["SHRID name agrees", "todo"], ["Name unique", "todo"] ],
+    ladder: ["SHRID village", "Police station area", "Tehsil", "District"] },
+  { id: "s6", n: 11, name: "Output", tag: "per event", nodes: [
+    ["SHRID id", "build"], ["2001 census code", "build"], ["Level and tier", "build"], ["Flags", "todo"] ] },
+  { id: "s7", n: 12, name: "Validate", tag: "100-event sheet", nodes: [
+    ["Hand checks", "build"], ["Haiku labels", "todo"], ["Stronger model", "todo"], ["Precision by tier", "todo"] ] }
+];
+var ORDER = ["todo", "build", "done", "refine"];
+var LABEL = { todo: "to do", build: "building", done: "done", refine: "to refine" };
+var KEY = "satp-pipeline-status-v1";
+var saved = {};
+try { saved = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { saved = {}; }
+
+var flow = document.getElementById("flow");
+ITEMS.forEach(function (st, idx) {
+  var d = document.createElement("section");
+  d.className = "item" + (idx === ITEMS.length - 1 ? " last" : "");
+  d.style.gridRow = idx + 1;
+  d.dataset.title = (st.n ? st.n + ". " : "") + st.name;
+  d.innerHTML = "<div class='head'><span class='num'></span><h2></h2></div><p class='tag'></p><div class='nodes'></div>";
+  d.querySelector(".num").textContent = st.n || "";
+  d.querySelector("h2").textContent = st.name;
+  d.querySelector(".tag").textContent = st.tag;
+  if (st.n) { var ph = document.createElement("span"); var loc = !st.phase; ph.className = "phase" + (loc ? " locate" : ""); ph.textContent = loc ? "locate" : "prepare"; d.querySelector(".head").appendChild(ph); }
+  var box = d.querySelector(".nodes");
+  st.nodes.forEach(function (n, i) {
+    var id = st.id + "-" + i;
+    var s = ORDER.indexOf(saved[id]) >= 0 ? saved[id] : n[1];
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "node" + (n[2] ? " " + n[2] : "");
+    b.dataset.id = id; b.dataset.s = s; b.dataset.label = n[0];
+    b.innerHTML = "<span></span><i class='dot'></i>";
+    b.firstChild.textContent = n[0];
+    b.setAttribute("aria-label", n[0] + ", " + LABEL[s]);
+    box.appendChild(b);
+  });
+  if (st.ladder) {
+    var l = document.createElement("div"); l.className = "ladder";
+    l.appendChild(document.createTextNode("If a check fails, fall back to "));
+    st.ladder.forEach(function (t, i) {
+      var b = document.createElement("b"); b.textContent = t; l.appendChild(b);
+      if (i < st.ladder.length - 1) { var a = document.createElement("i"); a.textContent = "→"; l.appendChild(a); }
+    });
+    d.appendChild(l);
+  }
+  flow.appendChild(d);
+});
+var loop = document.createElement("div"); loop.className = "loop"; loop.innerHTML = "<span>refine from the checks</span>";
+var extractRow = ITEMS.findIndex(function (x) { return x.id === "s2"; }) + 1;
+loop.style.gridRow = extractRow + " / " + (ITEMS.length + 1);
+flow.appendChild(loop);
+
+function counts() {
+  var all = flow.querySelectorAll(".node"), done = 0;
+  all.forEach(function (n) { if (n.dataset.s === "done") done++; });
+  document.getElementById("count").textContent = done + " of " + all.length + " done";
+}
+flow.addEventListener("click", function (e) {
+  var n = e.target.closest(".node"); if (!n) return;
+  var next = ORDER[(ORDER.indexOf(n.dataset.s) + 1) % ORDER.length];
+  n.dataset.s = next; n.setAttribute("aria-label", n.dataset.label + ", " + LABEL[next]);
+  saved[n.dataset.id] = next;
+  try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (err) {}
+  counts();
+});
+document.getElementById("reset").addEventListener("click", function () {
+  saved = {}; try { localStorage.removeItem(KEY); } catch (err) {}
+  location.reload();
+});
+document.getElementById("copy").addEventListener("click", function () {
+  var lines = [], msg = document.getElementById("msg");
+  flow.querySelectorAll(".item").forEach(function (it) {
+    lines.push(it.dataset.title);
+    it.querySelectorAll(".node").forEach(function (n) { lines.push("  - " + n.dataset.label + " [" + LABEL[n.dataset.s] + "]"); });
+  });
+  var text = lines.join("\n");
+  function fallback() { msg.textContent = "Copy was blocked here. Select the list manually:\n" + text; }
+  try { navigator.clipboard.writeText(text).then(function () { msg.textContent = "Outline copied."; }, fallback); } catch (err) { fallback(); }
+});
+counts();
+</script>
+</body>
+</html>

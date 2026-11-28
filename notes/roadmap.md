@@ -172,3 +172,9 @@ It has good code for automating the downloading of event descriptions
 - Paper 4: Topic modeling to select articles and text summarization to prep them for coding.
 - Paper 5: The whole Megillah, CI/CD pipeline of scraping, data, feeding to a topic model, summarizing the text, auto-coding the events and then visualizing the data.
     
+## open issues (logged 2026-11-24)
+
+### Non-events in the analysis set
+- Found during the place hand check: SATP093603 (NIA gives up DNA identification of the Pathankot attackers, reported 2016-04-28) is investigation news about an earlier act, not an event, but sits in the analysis set as a bombing.
+- Cause: the analysis set is selected by the DistilBERT action classifier (`event_confidence` > 0.7, the highest action probability). DeepSeek's non-event rule (code/process/code_events_deepseek.R, which already excludes investigation news, court cases, statements and anniversaries) has only been run on ~2% of the analysis set (`is_event_deepseek` NA for the rest). Among the events it did code, ~6% were non-events, i.e. roughly 2,000-2,500 of the ~40,700 analysis events.
+- Plan: run the existing DeepSeek event coding on the whole analysis set (~$4-8 at deepseek-flash prices) and drop `is_event == FALSE`; no new training or instructions needed first. Add an `is_event` column to the place check sheet so hand checks also measure the non-event rate, and keep non-events out of the location precision figures.
